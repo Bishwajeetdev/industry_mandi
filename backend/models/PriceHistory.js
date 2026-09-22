@@ -1,0 +1,1 @@
+import mongoose from 'mongoose'; export default mongoose.model('PriceHistory',new mongoose.Schema({product:{type:mongoose.Schema.Types.ObjectId,ref:'Product',index:true},offer:{type:mongoose.Schema.Types.ObjectId,ref:'VendorOffer'},price:Number},{timestamps:true}));

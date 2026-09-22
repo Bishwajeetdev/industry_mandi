@@ -1,0 +1,1 @@
+import mongoose from 'mongoose'; export default mongoose.model('Category',new mongoose.Schema({name:{type:String,unique:true},slug:{type:String,unique:true},description:String,rankingFields:[String],filters:[String]},{timestamps:true}));

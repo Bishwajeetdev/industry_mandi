@@ -1,0 +1,1 @@
+import mongoose from 'mongoose'; export default mongoose.model('RankingConfiguration',new mongoose.Schema({category:{type:String,unique:true},weights:{type:Map,of:Number,default:{performance:30,price:25,display:15,battery:15,build:10,features:5}}},{timestamps:true}));

@@ -1,0 +1,76 @@
+import mongoose from "mongoose";
+const imageSchema = new mongoose.Schema(
+  {
+    url: { type: String, required: true },
+    filename: String,
+    originalName: String,
+    mimeType: String,
+    size: Number,
+    uploadedAt: { type: Date, default: Date.now },
+    alt: String,
+    isPrimary: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+const schema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, text: true },
+    slug: { type: String, unique: true },
+    brand: { type: String, index: true },
+    model: { type: String, index: true },
+    sku: { type: String, index: true, unique: true, sparse: true, uppercase: true, trim: true },
+    category: { type: String, required: true, index: true },
+    subcategory: String,
+    description: String,
+    technicalSpecifications: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    specifications: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
+    oemManual: {
+      title: String,
+      url: String,
+    },
+    price: { type: Number, min: 0 },
+    stock: { type: Number, min: 0, default: 0 },
+    images: { type: [imageSchema], default: [] },
+    metrics: {
+      performance: { type: Number, default: 50 },
+      display: { type: Number, default: 50 },
+      battery: { type: Number, default: 50 },
+      build: { type: Number, default: 50 },
+      features: { type: Number, default: 50 },
+      camera: { type: Number, default: 50 },
+    },
+    rating: { type: Number, default: 0 },
+    reviewCount: { type: Number, default: 0 },
+    pros: [String],
+    cons: [String],
+    status: {
+      type: String,
+      enum: [
+        "draft",
+        "pending",
+        "in_review",
+        "approved",
+        "rejected",
+        "changes_requested",
+        "published",
+        "archived",
+      ],
+      default: "draft",
+      index: true,
+    },
+    reviewReason: { type: String, trim: true, maxlength: 2000 },
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    reviewedAt: Date,
+    publishedAt: Date,
+    submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    lastUploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    seo: { title: String, description: String },
+  },
+  { timestamps: true },
+);
+schema.index({ name: "text", brand: "text", model: "text", category: "text" });
+export default mongoose.model("Product", schema);

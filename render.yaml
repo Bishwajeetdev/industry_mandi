@@ -1,0 +1,48 @@
+services:
+  # -------------------------------------------------------------
+  # TechLens Backend API Web Service
+  # -------------------------------------------------------------
+  - type: web
+    name: techlens-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: MONGODB_URI
+        sync: false # Set your MongoDB Atlas connection string in Render dashboard
+      - key: JWT_SECRET
+        generateValue: true # Render automatically generates a secure 32+ character key
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: CLIENT_URL
+        fromService:
+          type: static
+          name: techlens-web
+          property: host
+
+  # -------------------------------------------------------------
+  # TechLens Frontend Static Site
+  # -------------------------------------------------------------
+  - type: static
+    name: techlens-web
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      # Rewrite all requests to index.html for React Router SPA routing
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: techlens-api
+          property: host

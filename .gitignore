@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+coverage/
+uploads/
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account*.json

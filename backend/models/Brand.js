@@ -1,0 +1,1 @@
+import mongoose from 'mongoose'; export default mongoose.model('Brand',new mongoose.Schema({name:{type:String,unique:true},slug:{type:String,unique:true},logo:String,website:String},{timestamps:true}));
