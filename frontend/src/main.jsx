@@ -140,7 +140,7 @@ import "./styles.css";
 import industrialPlantHero from "./assets/industrial-plant-hero.jpg";
 gsap.registerPlugin(ScrollToPlugin);
 const resolveApiUrl = (envUrl) => {
-  if (!envUrl) return "http://localhost:5000/api";
+  if (!envUrl) return "https://industry-mandi01.onrender.com/api";
   let url = envUrl.trim();
   if (!/^https?:\/\//i.test(url)) {
     url = `https://${url}`;
