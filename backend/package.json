@@ -3,6 +3,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch server.js",
+    "build": "node -e \"console.log('Backend build complete')\"",
     "start": "node server.js",
     "seed": "node seed/seed.js",
     "test": "node --test"
