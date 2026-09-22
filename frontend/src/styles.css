@@ -2892,8 +2892,15 @@ h1, h2, h3, h4, h5, h6 {
 .auth-brand-panel {
   position: relative;
   background: linear-gradient(160deg, #1e2230 0%, #252a3a 40%, #1a2030 100%);
-  border-right: 1px solid var(--border-subtle);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
   overflow: hidden;
+  /* Always force white text — this panel keeps a dark background regardless of theme */
+  --on-surface-bright: #ffffff;
+  --on-surface: #e2e6f0;
+  --on-surface-muted: #8a93aa;
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --border-glass-hover: rgba(255, 255, 255, 0.18);
+  color: #e2e6f0;
 }
 
 .auth-brand-inner {
