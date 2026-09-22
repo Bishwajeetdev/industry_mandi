@@ -34,29 +34,32 @@ app.use(
         styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
         imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
         fontSrc: ["'self'", 'https://cdn.jsdelivr.net'],
-        connectSrc: ["'self'", ...configuredOrigins],
+        connectSrc: ["'self'", ...configuredOrigins, 'https://*.onrender.com'],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
         upgradeInsecureRequests: isProd ? [] : null,
       },
     },
-    crossOriginResourcePolicy: { policy: 'same-site' },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   }),
 );
 
-// CORS — only allow configured origins; local dev patterns for convenience
+// CORS — allow configured origins, all Render domains (*.onrender.com), and local dev
 app.use(
   cors({
     origin(origin, callback) {
       if (!origin) return callback(null, true);
       if (allowedOrigins.has(origin)) return callback(null, true);
-      if (!isProd && localDevPatterns.some((pattern) => pattern.test(origin))) return callback(null, true);
+      if (/^https:\/\/[a-zA-Z0-9-]+\.onrender\.com$/i.test(origin)) return callback(null, true);
+      if (localDevPatterns.some((pattern) => pattern.test(origin))) return callback(null, true);
+      console.warn(`[CORS] Rejected origin: ${origin}`);
       return callback(new Error('CORS origin not allowed'));
     },
     credentials: true,
   }),
 );
+app.options('*', cors());
 
 // Global rate limit — moderate ceiling; stricter limits added per-route
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false }));
