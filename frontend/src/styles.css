@@ -5,61 +5,61 @@
    ========================================================================== */
 
 :root {
-  /* Surface Layers */
-  --brand-dark: #0b0d10;
-  --surface: #111317;
-  --surface-dim: #0c0e11;
-  --surface-bright: #1c2027;
-  --surface-container-lowest: #0c0e11;
-  --surface-container-low: #16181d;
-  --surface-container: #1e2127;
-  --surface-container-high: #272b34;
-  --surface-container-highest: #323742;
+  /* Surface Layers — Light Theme */
+  --brand-dark: #f5f6f8;
+  --surface: #ffffff;
+  --surface-dim: #eef0f3;
+  --surface-bright: #ffffff;
+  --surface-container-lowest: #f0f1f4;
+  --surface-container-low: #f5f6f9;
+  --surface-container: #eceef2;
+  --surface-container-high: #e3e5ea;
+  --surface-container-highest: #d6d9df;
 
-  /* Glassmorphism Tokens */
-  --surface-glass-nav: rgba(17, 19, 23, 0.85);
-  --surface-glass-card: rgba(22, 25, 32, 0.72);
-  --surface-glass-btn: rgba(255, 255, 255, 0.08);
-  --surface-glass-btn-hover: rgba(255, 255, 255, 0.15);
-  --border-glass: rgba(255, 255, 255, 0.08);
-  --border-glass-hover: rgba(255, 255, 255, 0.18);
-  --border-subtle: #252830;
+  /* Glassmorphism Tokens — Light */
+  --surface-glass-nav: rgba(255, 255, 255, 0.88);
+  --surface-glass-card: rgba(255, 255, 255, 0.78);
+  --surface-glass-btn: rgba(0, 0, 0, 0.05);
+  --surface-glass-btn-hover: rgba(0, 0, 0, 0.09);
+  --border-glass: rgba(0, 0, 0, 0.09);
+  --border-glass-hover: rgba(0, 0, 0, 0.18);
+  --border-subtle: #d4d7de;
   --border-focus: #ff4d26;
 
-  /* Brand Accents */
+  /* Brand Accents — unchanged */
   --brand-orange: #ff4d26;
   --brand-orange-hover: #e63e17;
-  --brand-orange-glow: rgba(255, 77, 38, 0.45);
-  --brand-orange-subtle: rgba(255, 77, 38, 0.12);
+  --brand-orange-glow: rgba(255, 77, 38, 0.35);
+  --brand-orange-subtle: rgba(255, 77, 38, 0.10);
 
   /* Functional Status & Telemetry */
-  --tertiary-mint: #4edea3;
-  --tertiary-mint-dim: #00a572;
-  --tertiary-mint-bg: rgba(78, 222, 163, 0.12);
-  --tertiary-mint-stroke: rgba(78, 222, 163, 0.3);
+  --tertiary-mint: #008f60;
+  --tertiary-mint-dim: #007a52;
+  --tertiary-mint-bg: rgba(0, 143, 96, 0.10);
+  --tertiary-mint-stroke: rgba(0, 143, 96, 0.25);
 
-  --precision-cyan: #0ea5e9;
-  --precision-cyan-bg: rgba(14, 165, 233, 0.12);
-  --precision-cyan-glow: rgba(14, 165, 233, 0.4);
+  --precision-cyan: #0284c7;
+  --precision-cyan-bg: rgba(2, 132, 199, 0.10);
+  --precision-cyan-glow: rgba(2, 132, 199, 0.3);
 
-  --amber-warn: #f59e0b;
-  --amber-warn-bg: rgba(245, 158, 11, 0.12);
-  --error-red: #ef4444;
-  --error-red-bg: rgba(239, 68, 68, 0.14);
+  --amber-warn: #d97706;
+  --amber-warn-bg: rgba(217, 119, 6, 0.10);
+  --error-red: #dc2626;
+  --error-red-bg: rgba(220, 38, 38, 0.10);
 
-  /* Typography Colors */
-  --on-surface: #e2e2e6;
-  --on-surface-variant: #9ea6b5;
-  --on-surface-muted: #647085;
-  --on-surface-bright: #ffffff;
+  /* Typography Colors — Light */
+  --on-surface: #1e2230;
+  --on-surface-variant: #4a5164;
+  --on-surface-muted: #8590a8;
+  --on-surface-bright: #0d1117;
   --on-primary: #ffffff;
 
-  /* Fonts */
+  /* Fonts — unchanged */
   --font-headline: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body: 'Inter', 'Plus Jakarta Sans', sans-serif;
   --font-mono: 'Space Grotesk', 'JetBrains Mono', monospace;
 
-  /* Geometry */
+  /* Geometry — unchanged */
   --radius-xs: 2px;
   --radius-sm: 4px;
   --radius-md: 8px;
@@ -67,12 +67,12 @@
   --radius-xl: 16px;
   --radius-pill: 9999px;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.65);
-  --shadow-orange-glow: 0 0 20px rgba(255, 77, 38, 0.35);
-  --shadow-mint-glow: 0 0 15px rgba(78, 222, 163, 0.35);
+  /* Shadows — lighter for light theme */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.16);
+  --shadow-orange-glow: 0 0 20px rgba(255, 77, 38, 0.25);
+  --shadow-mint-glow: 0 0 15px rgba(0, 143, 96, 0.25);
 }
 
 /* ==========================================================================
@@ -83,9 +83,10 @@
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
   scroll-behavior: smooth;
 }
+
 
 body, .dark-theme {
   margin: 0;
@@ -247,7 +248,7 @@ h1, h2, h3, h4, h5, h6 {
    TOPBAR & HEADER NAVIGATION (Screen 1 & 2)
    ========================================================================== */
 .topbar {
-  background: linear-gradient(90deg, #11141a 0%, #171b22 50%, #11141a 100%);
+  background: linear-gradient(90deg, #eef0f4 0%, #f5f6f9 50%, #eef0f4 100%);
   color: var(--on-surface-variant);
   border-bottom: 1px solid var(--border-glass);
   font-family: var(--font-mono);
@@ -443,8 +444,8 @@ h1, h2, h3, h4, h5, h6 {
    ========================================================================== */
 .market-hero {
   position: relative;
-  background: radial-gradient(circle at 80% 20%, rgba(255, 77, 38, 0.08) 0%, transparent 45%),
-              linear-gradient(180deg, #0b0d10 0%, #111419 100%);
+  background: radial-gradient(circle at 80% 20%, rgba(255, 77, 38, 0.06) 0%, transparent 45%),
+              linear-gradient(180deg, #f5f6f9 0%, #eceef2 100%);
   border-bottom: 1px solid var(--border-glass);
   min-height: 620px;
   overflow: hidden;
@@ -455,8 +456,8 @@ h1, h2, h3, h4, h5, h6 {
   position: absolute;
   inset: 0;
   background-image: 
-    radial-gradient(rgba(255, 77, 38, 0.15) 1px, transparent 1px),
-    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    radial-gradient(rgba(255, 77, 38, 0.18) 1px, transparent 1px),
+    linear-gradient(to right, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
   background-size: 32px 32px;
   mask-image: radial-gradient(circle at 50% 40%, black 40%, transparent 80%);
   pointer-events: none;
@@ -845,7 +846,7 @@ h1, h2, h3, h4, h5, h6 {
    PRODUCT CARDS (Stitch Screen 1 & Screen 2: Precision Spec Cards)
    ========================================================================== */
 .trending-section {
-  background: linear-gradient(180deg, #101318 0%, #0d0f13 100%);
+  background: linear-gradient(180deg, #eceef2 0%, #f0f1f5 100%);
   border-top: 1px solid var(--border-glass);
   border-bottom: 1px solid var(--border-glass);
   padding: 65px 0;
@@ -914,7 +915,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .market-product-image, .product-art {
   height: 190px;
-  background: #14171d;
+  background: #eceef2;
   position: relative;
   overflow: hidden;
   display: flex;
@@ -1214,22 +1215,22 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .promo-cobalt {
-  background: linear-gradient(135deg, #1b2838 0%, #0d1520 100%);
+  background: linear-gradient(135deg, #dff0fa 0%, #cce7f7 100%);
   border-color: rgba(14, 165, 233, 0.25);
 }
 
 .promo-blue {
-  background: linear-gradient(135deg, #201a18 0%, #120e0d 100%);
+  background: linear-gradient(135deg, #fce8e1 0%, #f9d9cf 100%);
   border-color: rgba(255, 77, 38, 0.25);
 }
 
 .promo-ink {
-  background: linear-gradient(135deg, #18221c 0%, #0e1411 100%);
+  background: linear-gradient(135deg, #d9f5ea 0%, #c9f0df 100%);
   border-color: rgba(78, 222, 163, 0.25);
 }
 
 .special-offer {
-  background: linear-gradient(135deg, #171b22 0%, #0f1217 100%);
+  background: linear-gradient(135deg, #e8eaf0 0%, #dde0e8 100%);
   border: 1px solid var(--border-glass-hover);
   border-radius: var(--radius-xl);
   min-height: 400px;
@@ -1401,7 +1402,7 @@ h1, h2, h3, h4, h5, h6 {
   overflow: hidden;
   margin: 10px 0;
   padding: 74px 0;
-  background: linear-gradient(115deg, #151a20 0%, #0e1115 58%, #101818 100%);
+  background: linear-gradient(115deg, #eceef2 0%, #e8eaf0 58%, #e8f0ee 100%);
   border-top: 1px solid var(--border-glass);
   border-bottom: 1px solid var(--border-glass);
 }
@@ -1634,7 +1635,7 @@ h1, h2, h3, h4, h5, h6 {
    FOOTER (Stitch Industrial Exchange)
    ========================================================================== */
 .market-footer {
-  background: #07090b;
+  background: #1e2230;
   border-top: 1px solid var(--border-glass);
   padding: 60px 0 24px;
   color: var(--on-surface-variant);
@@ -1998,7 +1999,7 @@ h1, h2, h3, h4, h5, h6 {
   min-height: 166px;
   overflow: hidden;
   border-color: rgba(78, 222, 163, 0.14);
-  background: linear-gradient(145deg, #1a2024 0%, #111519 100%);
+  background: linear-gradient(145deg, #e8f5ef 0%, #ddf2e8 100%);
 }
 
 .vendor-dashboard .metric::after {
@@ -2890,7 +2891,7 @@ h1, h2, h3, h4, h5, h6 {
 /* ── LEFT BRAND PANEL ─────────────────────────────────────────────────── */
 .auth-brand-panel {
   position: relative;
-  background: linear-gradient(160deg, #0d1017 0%, #111820 40%, #0b1118 100%);
+  background: linear-gradient(160deg, #1e2230 0%, #252a3a 40%, #1a2030 100%);
   border-right: 1px solid var(--border-subtle);
   overflow: hidden;
 }
