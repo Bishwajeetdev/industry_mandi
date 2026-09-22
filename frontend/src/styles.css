@@ -534,7 +534,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .hero-copy h1 em {
   font-style: normal;
-  background: linear-gradient(135deg, #ffffff 30%, var(--brand-orange) 100%);
+  background: linear-gradient(135deg, var(--on-surface-bright) 30%, var(--brand-orange) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
