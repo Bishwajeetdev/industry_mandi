@@ -140,13 +140,18 @@ import "./styles.css";
 import industrialPlantHero from "./assets/industrial-plant-hero.jpg";
 gsap.registerPlugin(ScrollToPlugin);
 const resolveApiUrl = (envUrl) => {
-  if (!envUrl) return "https://industry-mandi01.onrender.com/api";
-  let url = envUrl.trim();
-  if (!/^https?:\/\//i.test(url)) {
-    url = `https://${url}`;
+  if (envUrl && envUrl.trim()) {
+    let url = envUrl.trim();
+    if (!/^https?:\/\//i.test(url)) {
+      url = `https://${url}`;
+    }
+    url = url.replace(/\/+$/, "");
+    return url.endsWith("/api") ? url : `${url}/api`;
   }
-  url = url.replace(/\/+$/, "");
-  return url.endsWith("/api") ? url : `${url}/api`;
+  if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
+    return "http://localhost:5000/api";
+  }
+  return "https://industry-mandi01.onrender.com/api";
 };
 
 const api = axios.create({
@@ -301,8 +306,9 @@ function Header() {
             <kbd className="search-shortcut-badge">⌘K</kbd>
             <button type="submit">Search</button>
           </form>
-          <div className="navbar-nav ms-auto align-items-center gap-2 mobile-nav-menu">
+          <div className="navbar-nav ms-auto align-items-center gap-1 flex-nowrap mobile-nav-menu">
             <Link to="/products" className="nav-link header-utility" onClick={() => setMenuOpen(false)}><i className="bi bi-grid me-1" /> Explore</Link>
+            <Link to="/price-finder" className="nav-link header-utility" onClick={() => setMenuOpen(false)}><i className="bi bi-tags me-1" /> Price Finder</Link>
             <Link to="/about" className="nav-link header-utility" onClick={() => setMenuOpen(false)}>About</Link>
             <Link to="/contact" className="nav-link header-utility" onClick={() => setMenuOpen(false)}>Contact us</Link>
             {!user && <Link to="/register?role=vendor" className="nav-link header-utility" onClick={() => setMenuOpen(false)}>Become a seller</Link>}
@@ -845,7 +851,11 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
   const fallbackImage = "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80";
 
   return (
-    <article className={`product-card${onRemove ? " wishlist-product-card" : ""}`}>
+    <article
+      className={`product-card${onRemove ? " wishlist-product-card" : ""}`}
+      onClick={() => navigate(`/product/${product.slug || product._id}`)}
+      style={{ cursor: "pointer" }}
+    >
       <div className="product-art">
         <img
           src={image || fallbackImage}
@@ -866,7 +876,7 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
         <button
           className={`icon-action ${isWishlisted ? "active" : ""}`}
           aria-label={`Save ${product.name}`}
-          onClick={saveWishlist}
+          onClick={(e) => { e.stopPropagation(); saveWishlist(e); }}
           title={isWishlisted ? "Remove from wishlist" : "Save to wishlist"}
         >
           <i className={`bi ${isWishlisted ? "bi-heart-fill" : "bi-heart"}`} />
@@ -901,7 +911,7 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
           <div className="product-btn-row">
             <button
               className={`btn btn-sm flex-fill ${isComparing ? "btn-primary" : "btn-outline-primary"}`}
-              onClick={handleCompare}
+              onClick={(e) => { e.stopPropagation(); handleCompare(e); }}
               title="Compare product specifications"
             >
               <i className="bi bi-arrow-left-right me-1" />
@@ -909,7 +919,7 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
             </button>
             <button
               className={`btn btn-sm btn-primary flex-fill ${cartAdded ? "btn-success" : ""}`}
-              onClick={addToCart}
+              onClick={(e) => { e.stopPropagation(); addToCart(e); }}
               title="Add product to procurement cart"
             >
               <i className={`bi ${cartAdded ? "bi-check2" : "bi-cart-plus"} me-1`} />
@@ -921,7 +931,7 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
               <button
                 type="button"
                 className="btn-wishlist-inline text-danger"
-                onClick={() => onRemove(product._id)}
+                onClick={(e) => { e.stopPropagation(); onRemove(product._id); }}
                 title="Remove from shortlist"
               >
                 <i className="bi bi-heartbreak me-1" />
@@ -931,7 +941,7 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
               <button
                 type="button"
                 className={`btn-wishlist-inline ${isWishlisted ? "active" : ""}`}
-                onClick={saveWishlist}
+                onClick={(e) => { e.stopPropagation(); saveWishlist(e); }}
                 title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
               >
                 <i className={`bi ${isWishlisted ? "bi-heart-fill text-danger" : "bi-heart"} me-1`} />
@@ -941,6 +951,7 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
             <Link
               className="product-details-link"
               to={`/product/${product.slug || product._id}`}
+              onClick={(e) => e.stopPropagation()}
             >
               <span>View Details</span>
               <i className="bi bi-arrow-up-right ms-1" />
@@ -1380,7 +1391,11 @@ function Home() {
     const defaultFallback = FALLBACK_IMAGES[index % FALLBACK_IMAGES.length];
 
     return (
-      <article className={`market-product-card ${compact ? "compact" : ""}`}>
+      <article
+        className={`market-product-card ${compact ? "compact" : ""}`}
+        onClick={() => { rememberProduct(product); navigate(detailPath(product)); }}
+        style={{ cursor: "pointer" }}
+      >
         <div className="market-product-image">
           <img
             src={productImage(product, index)}
@@ -1402,7 +1417,7 @@ function Home() {
           <button
             className={`icon-action ${isWish ? "active" : ""}`}
             aria-label={`Save ${product.name}`}
-            onClick={() => saveWishlist(product)}
+            onClick={(e) => { e.stopPropagation(); saveWishlist(product); }}
             title={isWish ? "Remove from wishlist" : "Save to wishlist"}
           >
             <i className={`bi ${isWish ? "bi-heart-fill" : "bi-heart"}`} />
@@ -1413,7 +1428,7 @@ function Home() {
             <span>{product.brand}</span>
             <span className="verified-dot">✓</span>
           </div>
-          <Link to={detailPath(product)} onClick={() => rememberProduct(product)} className="product-title-link">
+          <Link to={detailPath(product)} onClick={(e) => { e.stopPropagation(); rememberProduct(product); }} className="product-title-link">
             <h3>{product.name}</h3>
           </Link>
           <div className="d-flex align-items-center gap-2 small text-warning">
@@ -1429,7 +1444,7 @@ function Home() {
               <button
                 type="button"
                 className={`btn btn-sm btn-compare-action ${isComparing ? "active" : ""}`}
-                onClick={() => compareProduct(product)}
+                onClick={(e) => { e.stopPropagation(); compareProduct(product); }}
                 title="Compare product specifications"
               >
                 <i className="bi bi-arrow-left-right" />
@@ -1438,7 +1453,7 @@ function Home() {
               <button
                 type="button"
                 className={`btn btn-sm btn-cart-action ${isCart ? "active" : ""}`}
-                onClick={() => addToCart(product)}
+                onClick={(e) => { e.stopPropagation(); addToCart(product); }}
                 title="Add product to procurement cart"
               >
                 <i className={`bi ${isCart ? "bi-check2" : "bi-cart-plus"}`} />
@@ -1449,13 +1464,13 @@ function Home() {
               <button
                 type="button"
                 className={`btn-wishlist-inline ${isWish ? "active" : ""}`}
-                onClick={() => saveWishlist(product)}
+                onClick={(e) => { e.stopPropagation(); saveWishlist(product); }}
                 title={isWish ? "Remove from wishlist" : "Add to wishlist"}
               >
                 <i className={`bi ${isWish ? "bi-heart-fill" : "bi-heart"}`} />
                 <span>{isWish ? "Wishlisted" : "Wishlist"}</span>
               </button>
-              <Link to={detailPath(product)} onClick={() => rememberProduct(product)} className="product-details-link">
+              <Link to={detailPath(product)} onClick={(e) => { e.stopPropagation(); rememberProduct(product); }} className="product-details-link">
                 <span>View Details</span>
                 <i className="bi bi-arrow-up-right" />
               </Link>
@@ -6300,6 +6315,7 @@ function App() {
             <Route path="/products" element={<Products />} />
             <Route path="/product/:slug" element={<Product />} />
             <Route path="/compare" element={<Compare />} />
+            <Route path="/price-finder" element={<PriceFinder />} />
             <Route path="/login" element={<AuthPage />} />
             <Route path="/register" element={<AuthPage register />} />
             <Route path="/cart" element={<CartPage />} />
@@ -6424,6 +6440,385 @@ function App() {
   );
 }
 createRoot(document.getElementById("root")).render(<App />);
+
+// ─── Price Finder ─────────────────────────────────────────────────────────────
+
+const SUPPORTED_PLATFORMS = [
+  { id: "amazon_in",     name: "Amazon India",   color: "#FF9900" },
+  { id: "flipkart",      name: "Flipkart",       color: "#2874F0" },
+  { id: "indiamart",     name: "IndiaMART",      color: "#E87722" },
+  { id: "tradeindia",    name: "TradeIndia",     color: "#F58220" },
+  { id: "industrybuying",name: "IndustryBuying", color: "#1A73E8" },
+  { id: "moglix",        name: "Moglix",         color: "#E53935" },
+];
+
+function detectPlatformClient(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    return SUPPORTED_PLATFORMS.find((p) =>
+      host === p.id.replace("_in", ".in") ||
+      host.includes(p.id.replace("_in", ""))
+    ) || null;
+  } catch { return null; }
+}
+
+function PfAvailBadge({ av }) {
+  if (!av || av === "check_live") return <span className="pf-avail-badge check"><i className="bi bi-question-circle" /> Check live</span>;
+  if (av === "In Stock")  return <span className="pf-avail-badge in-stock"><i className="bi bi-circle-fill" style={{fontSize:"0.45rem"}} /> In Stock</span>;
+  if (av === "Limited")   return <span className="pf-avail-badge limited"><i className="bi bi-circle-fill" style={{fontSize:"0.45rem"}} /> Limited</span>;
+  return <span className="pf-avail-badge out"><i className="bi bi-x-circle" /> Out of Stock</span>;
+}
+
+function PfMatchedCard({ product }) {
+  const primary = (product.images || []).find((x) => x.isPrimary) || (product.images || [])[0];
+  const image = typeof primary === "string" ? primary : primary?.url;
+  const fallback = "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=400&q=80";
+  const specs = { ...(product.specifications || {}), ...(product.technicalSpecifications || {}) };
+  const specEntries = Object.entries(specs).slice(0, 6);
+  return (
+    <div className="pf-matched-card">
+      <img src={image || fallback} alt={product.name} className="pf-matched-img"
+        onError={(e) => { e.currentTarget.src = fallback; }} />
+      <div className="pf-matched-body">
+        <span className="pf-match-badge"><i className="bi bi-patch-check-fill" /> Catalog match found</span>
+        <h2>{product.name}</h2>
+        <div className="pf-meta">
+          {product.brand && <span><strong>{product.brand}</strong> · Brand</span>}
+          {product.model && <span><strong>{product.model}</strong> · Model</span>}
+          {product.sku && <span><strong>{product.sku}</strong> · SKU</span>}
+          {product.category && <span><strong>{product.category}</strong> · Category</span>}
+          {product.rating > 0 && <span><i className="bi bi-star-fill text-warning" /> <strong>{product.rating.toFixed(1)}</strong></span>}
+        </div>
+        {specEntries.length > 0 && (
+          <div className="product-spec-chips mb-2">
+            {specEntries.map(([k, v]) => (
+              <span className="spec-chip" key={k}>{k}: {String(v)}</span>
+            ))}
+          </div>
+        )}
+        <div className="d-flex gap-2 flex-wrap">
+          <Link to={`/product/${product.slug || product._id}`} className="pf-action-btn primary">
+            <i className="bi bi-eye" /> View on Industry Mandi
+          </Link>
+          <button
+            className="pf-action-btn"
+            onClick={() => {
+              const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+              if (!cart.find((x) => String(x._id) === String(product._id))) {
+                localStorage.setItem("cart", JSON.stringify([...cart, { ...product, quantity: 1 }]));
+                window.dispatchEvent(new Event("cart-updated"));
+              }
+            }}
+          >
+            <i className="bi bi-cart-plus" /> Add to Cart
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PriceFinder() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [url, setUrl] = useState(searchParams.get("url") || "");
+  const [detectedPlatform, setDetectedPlatform] = useState(null);
+  const [state, setState] = useState({ loading: false, error: "", data: null });
+
+  // Detect platform as user types
+  useEffect(() => {
+    setDetectedPlatform(url.trim() ? detectPlatformClient(url) : null);
+  }, [url]);
+
+  const search = async (e) => {
+    if (e) e.preventDefault();
+    if (!url.trim()) return;
+    setState({ loading: true, error: "", data: null });
+    try {
+      const r = await api.post("/price-finder", { url: url.trim() });
+      setState({ loading: false, error: "", data: r.data.data });
+    } catch (err) {
+      setState({ loading: false, error: err.response?.data?.message || err.message || "Failed to look up product.", data: null });
+    }
+  };
+
+  const hasExternal = state.data?.offers?.some((o) => o.fetch_required);
+  const internalOffers = state.data?.offers?.filter((o) => !o.fetch_required) || [];
+  const externalOffers = state.data?.offers?.filter((o) => o.fetch_required) || [];
+  const bestPrice = internalOffers.find((o) => o.price)?.price;
+
+  const fmtPrice = (p) => p != null ? `₹${Number(p).toLocaleString("en-IN")}` : "—";
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+
+  return (
+    <main className="pf-page">
+      <div className="container">
+        {/* Hero / Input */}
+        <section className="pf-hero">
+          <span className="eyebrow dark">PRICE INTELLIGENCE</span>
+          <h1>Paste a Product Link · Find Best Price</h1>
+          <p>
+            Paste any industrial product URL from Amazon, Flipkart, IndiaMART, Moglix, and more.
+            We match it against our catalog and show all available prices in one unified table.
+          </p>
+
+          <form onSubmit={search}>
+            <div className="pf-input-wrap">
+              {detectedPlatform && (
+                <div className="pf-detect-pill" style={{ color: detectedPlatform.color }}>
+                  <span className="pip" style={{ background: detectedPlatform.color }} />
+                  {detectedPlatform.name}
+                </div>
+              )}
+              <input
+                type="url"
+                placeholder="Paste product URL here — e.g. https://www.amazon.in/dp/B09XYZ..."
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                required
+              />
+              <button type="submit" disabled={state.loading}>
+                {state.loading ? <><i className="bi bi-arrow-repeat spin me-1" />Searching…</> : <><i className="bi bi-search me-1" />Find Price</>}
+              </button>
+            </div>
+          </form>
+
+          <div className="pf-supported">
+            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", alignSelf: "center" }}>Supported:</span>
+            {SUPPORTED_PLATFORMS.map((p) => (
+              <span
+                key={p.id}
+                className={`pf-platform-chip ${detectedPlatform?.id === p.id ? "active" : ""}`}
+                style={detectedPlatform?.id === p.id ? { color: p.color } : {}}
+              >
+                <span className="pf-dot" style={{ background: p.color }} />
+                {p.name}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        {/* Error */}
+        {state.error && (
+          <div className="alert alert-danger d-flex align-items-center gap-2">
+            <i className="bi bi-exclamation-circle" />
+            {state.error}
+          </div>
+        )}
+
+        {/* Loading skeleton */}
+        {state.loading && (
+          <div className="pf-skeleton">
+            {[1, 2, 3, 4].map((i) => <div className="pf-skeleton-row" key={i} />)}
+          </div>
+        )}
+
+        {/* Results */}
+        {state.data && !state.loading && (
+          <div className="pf-results">
+
+            {/* Matched product */}
+            {state.data.matched ? (
+              <PfMatchedCard product={state.data.matched} />
+            ) : (
+              <div className="pf-no-match">
+                <i className="bi bi-search" />
+                <h3>No exact product match found</h3>
+                <p>
+                  We couldn't find an exact match in our catalog for this URL.
+                  {state.data.similar?.length > 0 ? " Here are the closest products we found:" : " Try searching directly in our product catalog."}
+                </p>
+                {!state.data.similar?.length && (
+                  <Link to="/products" className="btn btn-primary mt-3">
+                    <i className="bi bi-grid me-2" />Browse Catalog
+                  </Link>
+                )}
+              </div>
+            )}
+
+            {/* External disclaimer */}
+            {hasExternal && (
+              <div className="pf-disclaimer">
+                <i className="bi bi-info-circle-fill" />
+                <div>
+                  <strong>External platform prices</strong> — Live pricing from third-party platforms requires official API credentials (Amazon PA-API, Flipkart Affiliate API, etc.).
+                  External rows link directly to the product page so you can verify the current price. Industry Mandi does not scrape or violate any platform's Terms of Service.
+                </div>
+              </div>
+            )}
+
+            {/* Price table */}
+            {state.data.offers?.length > 0 && (
+              <div className="pf-table-wrap">
+                <div className="pf-table-header">
+                  <h3><i className="bi bi-table me-2" />Price Comparison Table</h3>
+                  {bestPrice && (
+                    <span className="pf-best-badge">
+                      <i className="bi bi-lightning-fill" /> Best price: {fmtPrice(bestPrice)}
+                    </span>
+                  )}
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table className="pf-table">
+                    <thead>
+                      <tr>
+                        <th>Platform</th>
+                        <th>Seller</th>
+                        <th>Price</th>
+                        <th>MRP</th>
+                        <th>Discount</th>
+                        <th>Availability</th>
+                        <th>Shipping</th>
+                        <th>Last Updated</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.data.offers.map((offer, idx) => (
+                        <tr key={idx} className={idx === 0 && !offer.fetch_required ? "pf-best-row" : ""}>
+                          <td>
+                            <div className="pf-platform-cell">
+                              <span className="pf-platform-dot" style={{ background: offer.platform_color }} />
+                              <span>{offer.platform}</span>
+                              {idx === 0 && !offer.fetch_required && (
+                                <span className="pf-best-badge" style={{ marginLeft: 4 }}><i className="bi bi-lightning-fill" /> Best</span>
+                              )}
+                            </div>
+                          </td>
+                          <td>{offer.seller}</td>
+                          <td>
+                            {offer.fetch_required ? (
+                              <span className="pf-fetch-required">Visit site →</span>
+                            ) : (
+                              <span className="pf-price-cell">{fmtPrice(offer.price)}</span>
+                            )}
+                          </td>
+                          <td><span className="pf-mrp-cell">{fmtPrice(offer.mrp)}</span></td>
+                          <td>
+                            {offer.discount > 0 && (
+                              <span className="pf-discount-cell">−{offer.discount}%</span>
+                            )}
+                          </td>
+                          <td><PfAvailBadge av={offer.availability} /></td>
+                          <td style={{ fontSize: "0.82rem" }}>
+                            {offer.fetch_required ? "—" : offer.shipping === 0 ? <span style={{ color: "#22c55e" }}>Free</span> : fmtPrice(offer.shipping)}
+                          </td>
+                          <td><span className="pf-timestamp">{fmtDate(offer.last_updated)}</span></td>
+                          <td>
+                            <a
+                              href={offer.url.startsWith("http") ? offer.url : `${window.location.origin}${offer.url}`}
+                              target={offer.source === "external" ? "_blank" : "_self"}
+                              rel="noopener noreferrer"
+                              className={`pf-action-btn ${!offer.fetch_required && idx === 0 ? "primary" : ""}`}
+                            >
+                              {offer.source === "internal" ? <><i className="bi bi-bag-check" /> Buy</> : <><i className="bi bi-box-arrow-up-right" /> View</>}
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Similar products */}
+            {state.data.similar?.length > 0 && (
+              <div>
+                <div className="d-flex align-items-center justify-content-between mb-3">
+                  <div>
+                    <span className="eyebrow dark d-block">CLOSEST MATCHES</span>
+                    <h3 className="mt-1 mb-0">Similar Products in Our Catalog</h3>
+                  </div>
+                  <Link to="/products" className="btn btn-outline-primary btn-sm">
+                    View all <i className="bi bi-arrow-right ms-1" />
+                  </Link>
+                </div>
+                <div className="pf-similar-grid">
+                  {state.data.similar.map((p) => {
+                    const img = (p.images || [])[0];
+                    const imgUrl = typeof img === "string" ? img : img?.url;
+                    const fallback = "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=400&q=80";
+                    return (
+                      <Link
+                        key={p._id}
+                        to={`/product/${p.slug || p._id}`}
+                        className="text-decoration-none"
+                        onClick={() => setUrl("")}>
+                        <div style={{
+                          background: "var(--glass-bg)",
+                          border: "1px solid var(--glass-border)",
+                          borderRadius: 12,
+                          overflow: "hidden",
+                          transition: "border-color 0.2s, transform 0.15s",
+                          cursor: "pointer",
+                        }}
+                          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--glass-border)"; e.currentTarget.style.transform = "none"; }}
+                        >
+                          <div style={{ height: 140, overflow: "hidden", background: "#111" }}>
+                            <img
+                              src={imgUrl || fallback}
+                              alt={p.name}
+                              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                              onError={(e) => { e.currentTarget.src = fallback; }}
+                            />
+                          </div>
+                          <div style={{ padding: "12px" }}>
+                            <div className="product-brand-tag mb-1"><span>{p.brand}</span><span className="verified-dot">✓</span></div>
+                            <div style={{ fontWeight: 700, fontSize: "0.88rem", color: "var(--text-main)", marginBottom: 4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{p.name}</div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{p.category}</div>
+                            {p.price > 0 && <div style={{ fontWeight: 800, color: "#22c55e", marginTop: 6 }}>{fmtPrice(p.price)}</div>}
+                            <div style={{ fontSize: "0.72rem", color: "var(--primary)", marginTop: 6, fontWeight: 600 }}>Select this product <i className="bi bi-arrow-right" /></div>
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* No offers */}
+            {state.data.matched && state.data.offers?.length === 0 && (
+              <div className="pf-no-match">
+                <i className="bi bi-tag" />
+                <h3>No active offers yet</h3>
+                <p>This product is in our catalog but has no approved vendor offers at the moment. Check back soon or browse similar products.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Intro info — before any search */}
+        {!state.data && !state.loading && !state.error && (
+          <div className="row g-4 mt-2">
+            {[
+              { icon: "bi-link-45deg", title: "Paste any product link", body: "Works with Amazon India, Flipkart, IndiaMART, TradeIndia, IndustryBuying, Moglix and more." },
+              { icon: "bi-search", title: "We match it instantly", body: "Our engine identifies the product by model number, SKU, brand and specifications against our catalog." },
+              { icon: "bi-table", title: "Unified price table", body: "See prices from all our approved vendors and external sources sorted from lowest to highest." },
+              { icon: "bi-shield-check", title: "No scraping · Always compliant", body: "We use official affiliate APIs and product feeds only. External links open in the source platform." },
+            ].map((card) => (
+              <div className="col-md-3 col-sm-6" key={card.title}>
+                <div style={{
+                  background: "var(--glass-bg)",
+                  border: "1px solid var(--glass-border)",
+                  borderRadius: 14,
+                  padding: "24px",
+                  height: "100%",
+                }}>
+                  <i className={`bi ${card.icon} fs-2 text-primary d-block mb-3`} />
+                  <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>{card.title}</h4>
+                  <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: 0 }}>{card.body}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
 function AdminProductCreate() {
   const nav = useNavigate(),
     [form, setForm] = useState({

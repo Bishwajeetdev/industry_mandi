@@ -11,6 +11,7 @@ import * as order from "../controllers/orderController.js";
 import { protect, allow } from "../middleware/auth.js";
 import { asyncHandler as ah } from "../middleware/asyncHandler.js";
 import { productImages } from "../middleware/upload.js";
+import * as priceFinder from "../controllers/priceFinderController.js";
 
 // ─── Per-route rate limiters ──────────────────────────────────────────────────
 
@@ -105,6 +106,9 @@ r.get("/products/compare", compareLimiter, ah(products.compare));
 r.get("/recommendations", ah(products.recommendations));
 r.get("/products/:slug/recommendations", ah(products.productRecommendations));
 r.get("/products/:slug", ah(products.detail));
+
+// Price Finder (public — no auth required)
+r.post("/price-finder", ah(priceFinder.findByUrl));
 
 // Product creation (admin or vendor — upload rate-limited)
 r.post(
