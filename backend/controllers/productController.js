@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import VendorOffer from "../models/VendorOffer.js";
 import Review from "../models/Review.js";
@@ -173,10 +174,10 @@ export async function list(req, res) {
 }
 
 export async function detail(req, res) {
-  const p = await Product.findOne({
-    slug: req.params.slug,
-    status: { $in: publicStatuses },
-  });
+  const query = mongoose.Types.ObjectId.isValid(req.params.slug)
+    ? { $or: [{ slug: req.params.slug }, { _id: req.params.slug }], status: { $in: publicStatuses } }
+    : { slug: req.params.slug, status: { $in: publicStatuses } };
+  const p = await Product.findOne(query);
   if (!p)
     return res
       .status(404)
@@ -205,7 +206,10 @@ export async function detail(req, res) {
 }
 
 export async function productRecommendations(req, res) {
-  const product = await Product.findOne({ slug: req.params.slug, status: { $in: publicStatuses } });
+  const query = mongoose.Types.ObjectId.isValid(req.params.slug)
+    ? { $or: [{ slug: req.params.slug }, { _id: req.params.slug }], status: { $in: publicStatuses } }
+    : { slug: req.params.slug, status: { $in: publicStatuses } };
+  const product = await Product.findOne(query);
   if (!product) return res.status(404).json({ success: false, message: "Product not found" });
   const catalogue = await Product.find({ _id: { $ne: product._id }, category: product.category, status: { $in: publicStatuses } }).limit(24);
   const sourceSpecs = { ...(product.specifications?.toObject?.() || product.specifications || {}), ...(product.technicalSpecifications?.toObject?.() || product.technicalSpecifications || {}) };
@@ -342,10 +346,24 @@ export async function compare(req, res) {
     return res
       .status(422)
       .json({ success: false, message: "Select 2 to 5 products" });
-  const products = await Product.find({
-    _id: { $in: ids },
-    status: { $in: publicStatuses },
-  });
+  const validObjectIds = ids.filter(
+    (id) => mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === id
+  );
+  const stringIds = ids.filter((id) => !validObjectIds.includes(id));
+
+  const queryConditions = [];
+  if (validObjectIds.length > 0) queryConditions.push({ _id: { $in: validObjectIds } });
+  if (stringIds.length > 0) {
+    queryConditions.push({ slug: { $in: stringIds } });
+    queryConditions.push({ sku: { $in: stringIds } });
+  }
+
+  const products = queryConditions.length > 0
+    ? await Product.find({
+        $or: queryConditions,
+        status: { $in: publicStatuses },
+      })
+    : [];
   if (products.length !== ids.length)
     return res
       .status(422)

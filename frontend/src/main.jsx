@@ -192,6 +192,17 @@ const addToCompareQueue = (product) => {
   window.dispatchEvent(new CustomEvent("compare-updated", { detail: { products: next } }));
   return next;
 };
+const removeFromCompareQueue = (productId) => {
+  try {
+    const compared = JSON.parse(localStorage.getItem("compareProducts") || "[]");
+    const next = compared.filter((item) => String(item._id) !== String(productId));
+    localStorage.setItem("compareProducts", JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent("compare-updated", { detail: { products: next } }));
+    return next;
+  } catch {
+    return [];
+  }
+};
 function Loading({ label = "Loading…" }) {
   return (
     <main className="container py-5 text-secondary">
@@ -232,15 +243,38 @@ function Header() {
           ? "/vendor"
           : "/account";
   useEffect(() => {
-    if (user?.role !== "buyer") {
-      setWishlistCount(0);
-      return undefined;
+    if (user?.role === "buyer") {
+      const loadWishlistCount = () =>
+        api
+          .get("/buyer/wishlist")
+          .then((response) => {
+            const items = Array.isArray(response.data?.data) ? response.data.data : [];
+            setWishlistCount(items.length);
+            try {
+              localStorage.setItem("wishlist", JSON.stringify(items));
+            } catch {}
+          })
+          .catch(() => setWishlistCount(0));
+      const handleWishlistChange = (event) =>
+        typeof event.detail?.count === "number" ? setWishlistCount(event.detail.count) : loadWishlistCount();
+      loadWishlistCount();
+      window.addEventListener("wishlist-updated", handleWishlistChange);
+      return () => window.removeEventListener("wishlist-updated", handleWishlistChange);
+    } else {
+      const loadGuestWishlist = () => {
+        try {
+          const list = JSON.parse(localStorage.getItem("wishlist") || "[]");
+          setWishlistCount(list.length);
+        } catch {
+          setWishlistCount(0);
+        }
+      };
+      loadGuestWishlist();
+      const handleWishlistChange = (event) =>
+        typeof event.detail?.count === "number" ? setWishlistCount(event.detail.count) : loadGuestWishlist();
+      window.addEventListener("wishlist-updated", handleWishlistChange);
+      return () => window.removeEventListener("wishlist-updated", handleWishlistChange);
     }
-    const loadWishlistCount = () => api.get("/buyer/wishlist").then((response) => setWishlistCount(response.data.data?.length || 0)).catch(() => setWishlistCount(0));
-    const handleWishlistChange = (event) => typeof event.detail?.count === "number" ? setWishlistCount(event.detail.count) : loadWishlistCount();
-    loadWishlistCount();
-    window.addEventListener("wishlist-updated", handleWishlistChange);
-    return () => window.removeEventListener("wishlist-updated", handleWishlistChange);
   }, [user?.role]);
   return (
     <>
@@ -319,13 +353,29 @@ function CartDrawer() {
 }
 function CompareQueue() {
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false), [products, setProducts] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [products, setProducts] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("compareProducts") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [catalogProducts, setCatalogProducts] = useState([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
+
+  const currentCategory = products[0]?.category;
+
   const compareNow = () => {
     if (products.length >= 2) {
       setOpen(false);
+      setShowPicker(false);
       navigate(`/compare?ids=${products.map((product) => product._id).join(",")}`);
     }
   };
+
   useEffect(() => {
     const handleCompareChange = (event) => {
       const next = event.detail?.products || [];
@@ -335,8 +385,291 @@ function CompareQueue() {
     window.addEventListener("compare-updated", handleCompareChange);
     return () => window.removeEventListener("compare-updated", handleCompareChange);
   }, [navigate]);
+
+  useEffect(() => {
+    if (!showPicker) return;
+    setLoadingCatalog(true);
+    const params = { limit: 50 };
+    if (currentCategory) params.category = currentCategory;
+    api
+      .get("/products", { params })
+      .then((r) => {
+        setCatalogProducts(Array.isArray(r.data?.data?.items) ? r.data.data.items : []);
+      })
+      .catch(() => {
+        setCatalogProducts([]);
+      })
+      .finally(() => {
+        setLoadingCatalog(false);
+      });
+  }, [showPicker, currentCategory]);
+
+  const availablePickerProducts = useMemo(() => {
+    const currentIds = products.map((p) => String(p._id));
+    const combined = [...catalogProducts];
+    if (typeof INDUSTRIAL_CATALOG !== "undefined" && Array.isArray(INDUSTRIAL_CATALOG)) {
+      INDUSTRIAL_CATALOG.forEach((item) => {
+        if (!combined.some((p) => String(p._id) === String(item._id) || p.name === item.name)) {
+          if (!currentCategory || item.category?.toLowerCase() === currentCategory.toLowerCase()) {
+            combined.push(item);
+          }
+        }
+      });
+    }
+    return combined.filter((p) => {
+      if (currentIds.includes(String(p._id))) return false;
+      if (!pickerSearch.trim()) return true;
+      const term = pickerSearch.toLowerCase();
+      return (
+        (p.name && p.name.toLowerCase().includes(term)) ||
+        (p.brand && p.brand.toLowerCase().includes(term)) ||
+        (p.category && p.category.toLowerCase().includes(term)) ||
+        (p.model && p.model.toLowerCase().includes(term))
+      );
+    });
+  }, [catalogProducts, products, currentCategory, pickerSearch]);
+
+  const handleAddProduct = (item) => {
+    const next = addToCompareQueue(item);
+    setProducts(next);
+    if (next.length >= 4) {
+      setShowPicker(false);
+    }
+  };
+
+  const handleRemoveProduct = (productId) => {
+    const next = removeFromCompareQueue(productId);
+    setProducts(next);
+    if (next.length === 0) {
+      setOpen(false);
+      setShowPicker(false);
+    }
+  };
+
+  const openPicker = () => {
+    if (products.length >= 4) return;
+    setPickerSearch("");
+    setShowPicker(true);
+  };
+
   if (!open) return null;
-  return <div className="compare-queue-layer" role="presentation" onMouseDown={() => setOpen(false)}><section className="compare-queue" role="dialog" aria-modal="true" aria-label="Compare products" onMouseDown={(event) => event.stopPropagation()}><div className="compare-queue-header"><span>{products.length} product{products.length === 1 ? "" : "s"} in your <b>compare queue</b></span><button onClick={() => setOpen(false)} aria-label="Close comparison queue"><i className="bi bi-x-circle-fill" /></button></div><div className="compare-queue-slots">{Array.from({ length: 4 }, (_, index) => { const product = products[index]; return <div className="compare-queue-slot" key={product?._id || index}>{product ? <><div className="compare-queue-image">{(product.image || product.images?.[0]?.url || product.images?.[0]) ? <img src={product.image || product.images?.[0]?.url || product.images?.[0]} alt="" /> : <i className="bi bi-box-seam" />}</div><strong>{product.name}</strong><b>{fmt(getDisplayPrice(product))}</b></> : <><i className="bi bi-plus-circle-fill" /><span>Add product</span></>}</div>; })}</div><div className="compare-queue-footer"><button className="btn btn-outline-primary" onClick={() => setOpen(false)}>Add more products</button><button className="btn btn-primary" disabled={products.length < 2} onClick={compareNow}>Compare now</button><span>{products.length < 2 ? "Select 1 more product to compare" : `Compare ${products.length} products`}</span></div></section></div>;
+
+  return (
+    <>
+      <div
+        className="compare-queue-layer"
+        role="presentation"
+        onMouseDown={() => {
+          setOpen(false);
+          setShowPicker(false);
+        }}
+      >
+        <section
+          className="compare-queue"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Compare products"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="compare-queue-header">
+            <div className="d-flex align-items-center gap-2">
+              <span>
+                {products.length} product{products.length === 1 ? "" : "s"} in your <b>compare queue</b>
+              </span>
+              {currentCategory && (
+                <span className="badge bg-secondary text-light">
+                  {currentCategory}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                setOpen(false);
+                setShowPicker(false);
+              }}
+              aria-label="Close comparison queue"
+              className="btn-modal-close"
+            >
+              <i className="bi bi-x-circle-fill fs-5" />
+            </button>
+          </div>
+
+          <div className="compare-queue-slots">
+            {Array.from({ length: 4 }, (_, index) => {
+              const product = products[index];
+              return product ? (
+                <div className="compare-queue-slot compare-queue-slot-filled" key={product._id || index}>
+                  <button
+                    type="button"
+                    className="compare-queue-slot-remove"
+                    title={`Remove ${product.name} from queue`}
+                    aria-label={`Remove ${product.name} from queue`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveProduct(product._id);
+                    }}
+                  >
+                    <i className="bi bi-x" />
+                  </button>
+                  <div className="compare-queue-image">
+                    {(product.image || product.images?.[0]?.url || product.images?.[0]) ? (
+                      <img src={product.image || product.images?.[0]?.url || product.images?.[0]} alt={product.name || ""} />
+                    ) : (
+                      <i className="bi bi-box-seam" />
+                    )}
+                  </div>
+                  <strong>{product.name}</strong>
+                  <b>{fmt(getDisplayPrice(product))}</b>
+                </div>
+              ) : (
+                <div
+                  className="compare-queue-slot compare-queue-slot-empty"
+                  key={index}
+                  onClick={openPicker}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openPicker();
+                    }
+                  }}
+                  title="Click to add another product to compare"
+                >
+                  <i className="bi bi-plus-circle-fill text-primary" style={{ fontSize: "1.5rem" }} />
+                  <span className="fw-semibold">Add product</span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="compare-queue-footer">
+            <div className="d-flex align-items-center gap-2">
+              <button
+                type="button"
+                className="btn btn-outline-primary"
+                disabled={products.length >= 4}
+                onClick={openPicker}
+              >
+                <i className="bi bi-plus-lg me-1" />
+                {products.length >= 4 ? "Max 4 products added" : "Add more products"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline-secondary btn-sm"
+                onClick={() => {
+                  setOpen(false);
+                  setShowPicker(false);
+                  navigate(currentCategory ? `/products?category=${encodeURIComponent(currentCategory)}` : "/products");
+                }}
+              >
+                Browse catalog
+              </button>
+            </div>
+            <div className="d-flex align-items-center gap-3">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={products.length < 2}
+                onClick={compareNow}
+              >
+                Compare now
+              </button>
+              <span className="text-secondary small">
+                {products.length < 2
+                  ? "Select 1 more product to compare"
+                  : `Compare ${products.length} products`}
+              </span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {showPicker && (
+        <div
+          className="compare-modal-backdrop"
+          style={{ zIndex: 2100 }}
+          onClick={() => setShowPicker(false)}
+        >
+          <div className="compare-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="compare-modal-header">
+              <div>
+                <span className="eyebrow dark">EXPAND COMPARISON</span>
+                <h3 className="h5 mb-0">Add Product to Compare</h3>
+                {currentCategory && (
+                  <small className="text-secondary">
+                    Category: <strong>{currentCategory}</strong>
+                  </small>
+                )}
+              </div>
+              <button
+                type="button"
+                className="btn-modal-close"
+                onClick={() => setShowPicker(false)}
+                aria-label="Close"
+              >
+                <i className="bi bi-x-lg" />
+              </button>
+            </div>
+            <div className="compare-modal-search">
+              <i className="bi bi-search" />
+              <input
+                type="text"
+                placeholder="Search products by model, brand, or name..."
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="compare-modal-list">
+              {loadingCatalog ? (
+                <div className="text-center py-4 text-secondary">
+                  <div className="spinner-border spinner-border-sm me-2" />
+                  Loading available products...
+                </div>
+              ) : availablePickerProducts.length > 0 ? (
+                availablePickerProducts.map((p) => {
+                  const pImg = p.image || p.images?.[0]?.url || p.images?.[0] || "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80";
+                  return (
+                    <div className="picker-product-item" key={p._id}>
+                      <img src={pImg} alt={p.name || ""} />
+                      <div className="picker-product-info">
+                        <strong className="picker-title">{p.name}</strong>
+                        <span className="picker-meta">{p.brand} · {p.category}</span>
+                        <span className="picker-price">{fmt(getDisplayPrice(p))}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        onClick={() => handleAddProduct(p)}
+                      >
+                        <i className="bi bi-plus-lg me-1" /> Add
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center py-4 text-secondary">
+                  <p className="mb-2">No other equipment found in this category.</p>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-primary"
+                    onClick={() => {
+                      setOpen(false);
+                      setShowPicker(false);
+                      navigate("/products");
+                    }}
+                  >
+                    Browse full marketplace catalog
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 function Protected({ roles, children }) {
   const { user } = useAuth();
@@ -384,28 +717,127 @@ function RouteBoundary({ children }) {
 function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [cartAdded, setCartAdded] = useState(false);
-  const saveWishlist = async () => {
-    if (user?.role === "buyer" && product._id.length === 24) {
-      const response = await api.post(`/buyer/wishlist/${product._id}`);
-      notifyWishlistChanged(response.data.data);
-    } else {
-      const wishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
-      if (!wishlist.some((item) => item._id === product._id)) {
-        localStorage.setItem("wishlist", JSON.stringify([...wishlist, product]));
-      }
+
+  const getStoredWishlist = () => {
+    try {
+      const list = JSON.parse(localStorage.getItem("wishlist") || "[]");
+      return list.some((item) => String(item._id) === String(product._id));
+    } catch {
+      return false;
     }
   };
-  const addToCart = () => {
+  const getStoredCart = () => {
+    try {
+      const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+      return cart.some((item) => String(item._id) === String(product._id));
+    } catch {
+      return false;
+    }
+  };
+  const getStoredCompare = () => {
+    try {
+      const list = JSON.parse(localStorage.getItem("compareProducts") || "[]");
+      return list.some((item) => String(item._id) === String(product._id));
+    } catch {
+      return false;
+    }
+  };
+
+  const [isWishlisted, setIsWishlisted] = useState(getStoredWishlist);
+  const [cartAdded, setCartAdded] = useState(getStoredCart);
+  const [isComparing, setIsComparing] = useState(chosen !== undefined ? chosen : getStoredCompare);
+
+  useEffect(() => {
+    if (chosen !== undefined) {
+      setIsComparing(chosen);
+    }
+  }, [chosen]);
+
+  useEffect(() => {
+    setIsWishlisted(getStoredWishlist());
+    setCartAdded(getStoredCart());
+    if (chosen === undefined) {
+      setIsComparing(getStoredCompare());
+    }
+
+    const onWishlist = () => setIsWishlisted(getStoredWishlist());
+    const onCart = () => setCartAdded(getStoredCart());
+    const onCompare = () => {
+      if (chosen === undefined) setIsComparing(getStoredCompare());
+    };
+
+    window.addEventListener("wishlist-updated", onWishlist);
+    window.addEventListener("cart-updated", onCart);
+    window.addEventListener("compare-updated", onCompare);
+
+    return () => {
+      window.removeEventListener("wishlist-updated", onWishlist);
+      window.removeEventListener("cart-updated", onCart);
+      window.removeEventListener("compare-updated", onCompare);
+    };
+  }, [product._id, chosen]);
+
+  const saveWishlist = async (e) => {
+    if (e) e.preventDefault();
+    if (onRemove) {
+      onRemove(product._id);
+      return;
+    }
+
+    const currentWishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
+    const isAlready = currentWishlist.some((item) => String(item._id) === String(product._id));
+
+    if (user?.role === "buyer" && product._id && product._id.length === 24) {
+      try {
+        const response = await api.post(`/buyer/wishlist/${product._id}`);
+        const updatedList = Array.isArray(response.data?.data) ? response.data.data : [];
+        localStorage.setItem("wishlist", JSON.stringify(updatedList));
+        notifyWishlistChanged(updatedList);
+        setIsWishlisted(updatedList.some((item) => String(item._id) === String(product._id)));
+        return;
+      } catch (err) {
+        console.error("Wishlist sync error:", err);
+      }
+    }
+
+    const next = isAlready
+      ? currentWishlist.filter((item) => String(item._id) !== String(product._id))
+      : [...currentWishlist, product];
+    localStorage.setItem("wishlist", JSON.stringify(next));
+    notifyWishlistChanged(next);
+    setIsWishlisted(!isAlready);
+  };
+
+  const addToCart = (e) => {
+    if (e) e.preventDefault();
     const cart = JSON.parse(localStorage.getItem("cart") || "[]");
-    const existing = cart.find((item) => item._id === product._id);
-    localStorage.setItem("cart", JSON.stringify(existing ? cart.map((item) => item._id === product._id ? { ...item, quantity: (item.quantity || 1) + 1 } : item) : [...cart, { ...product, price: getDisplayPrice(product), quantity: 1 }]));
+    const existing = cart.find((item) => String(item._id) === String(product._id));
+    localStorage.setItem(
+      "cart",
+      JSON.stringify(
+        existing
+          ? cart.map((item) =>
+              String(item._id) === String(product._id)
+                ? { ...item, quantity: (item.quantity || 1) + 1 }
+                : item
+            )
+          : [...cart, { ...product, price: getDisplayPrice(product), quantity: 1 }]
+      )
+    );
     notifyCartChanged();
     setCartAdded(true);
   };
-  const compareProduct = () => {
-    addToCompareQueue(product);
+
+  const handleCompare = (e) => {
+    if (e) e.preventDefault();
+    if (onToggle) {
+      onToggle(product);
+    } else {
+      addToCompareQueue(product);
+      setIsComparing(true);
+    }
   };
+
   const primary =
     (product.images || []).find((x) => x.isPrimary) ||
     (product.images || [])[0],
@@ -420,11 +852,25 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
           alt={product.name}
           className="w-100 h-100 object-fit-cover"
           loading="lazy"
+          onError={(e) => { e.currentTarget.src = fallbackImage; }}
         />
-        <span className="badge">{product.category || "Machinery"}</span>
-        <span className="oem-verified-badge">
-          <i className="bi bi-patch-check-fill" /> OEM Verified
-        </span>
+        {product.badge === "OEM VERIFIED" || product.isVerified ? (
+          <span className="oem-verified-badge">
+            <i className="bi bi-patch-check-fill" /> OEM Verified
+          </span>
+        ) : (
+          <span className={`sale-pill ${product.badge === "IN STOCK" ? "new" : ""}`}>
+            {product.badge || product.category || "Machinery"}
+          </span>
+        )}
+        <button
+          className={`icon-action ${isWishlisted ? "active" : ""}`}
+          aria-label={`Save ${product.name}`}
+          onClick={saveWishlist}
+          title={isWishlisted ? "Remove from wishlist" : "Save to wishlist"}
+        >
+          <i className={`bi ${isWishlisted ? "bi-heart-fill" : "bi-heart"}`} />
+        </button>
       </div>
       <div className="p-3">
         <div className="product-brand-tag">
@@ -451,45 +897,56 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
             <i className="bi bi-star-fill" /> {product.rating || "4.8"}
           </span>
         </div>
-        {(selectable || user?.role === "buyer") && (
-          <div className="product-actions mt-3">
-            {selectable ? (
+        <div className="product-actions mt-2">
+          <div className="product-btn-row">
+            <button
+              className={`btn btn-sm flex-fill ${isComparing ? "btn-primary" : "btn-outline-primary"}`}
+              onClick={handleCompare}
+              title="Compare product specifications"
+            >
+              <i className="bi bi-arrow-left-right me-1" />
+              <span>{isComparing ? "Comparing" : "Compare"}</span>
+            </button>
+            <button
+              className={`btn btn-sm btn-primary flex-fill ${cartAdded ? "btn-success" : ""}`}
+              onClick={addToCart}
+              title="Add product to procurement cart"
+            >
+              <i className={`bi ${cartAdded ? "bi-check2" : "bi-cart-plus"} me-1`} />
+              <span>{cartAdded ? "Added" : "Add to cart"}</span>
+            </button>
+          </div>
+          <div className="product-action-footer">
+            {onRemove ? (
               <button
-                className={`btn btn-sm ${chosen ? "btn-primary" : "btn-outline-primary"}`}
-                onClick={() => onToggle(product)}
+                type="button"
+                className="btn-wishlist-inline text-danger"
+                onClick={() => onRemove(product._id)}
+                title="Remove from shortlist"
               >
-                {chosen ? "Added" : "Compare"}
+                <i className="bi bi-heartbreak me-1" />
+                <span>Remove</span>
               </button>
             ) : (
-              <button className="btn btn-sm btn-outline-primary" onClick={compareProduct}>
-                Compare
+              <button
+                type="button"
+                className={`btn-wishlist-inline ${isWishlisted ? "active" : ""}`}
+                onClick={saveWishlist}
+                title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
+              >
+                <i className={`bi ${isWishlisted ? "bi-heart-fill text-danger" : "bi-heart"} me-1`} />
+                <span>{isWishlisted ? "Wishlisted" : "Wishlist"}</span>
               </button>
             )}
-            {user?.role === "buyer" && (
-              <>
-                {onRemove ? (
-                  <button className="btn btn-sm wishlist-remove-btn" onClick={() => onRemove(product._id)} aria-label={`Remove ${product.name} from wishlist`}>
-                    <i className="bi bi-heartbreak" /> <span>Remove</span>
-                  </button>
-                ) : (
-                  <button className="btn btn-sm btn-outline-light px-2" onClick={saveWishlist} aria-label="Add to wishlist" title="Save to wishlist">
-                    <i className="bi bi-heart" />
-                  </button>
-                )}
-                <button className="btn btn-sm btn-dark" onClick={addToCart}>
-                  {cartAdded ? "Added" : "Add to cart"}
-                </button>
-              </>
-            )}
+            <Link
+              className="product-details-link"
+              to={`/product/${product.slug || product._id}`}
+            >
+              <span>View Details</span>
+              <i className="bi bi-arrow-up-right ms-1" />
+            </Link>
           </div>
-        )}
-        <Link
-          className="product-details-link"
-          to={`/product/${product.slug || product._id}`}
-        >
-          <span>View specifications</span>
-          <i className="bi bi-arrow-up-right" />
-        </Link>
+        </div>
       </div>
     </article>
   );
@@ -558,7 +1015,7 @@ const INDUSTRIAL_CATALOG = [
     price: 38500,
     oldPrice: 45000,
     sku: "CRO-IE3-11KW",
-    image: "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80",
+    image: "https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?auto=format&fit=crop&w=800&q=80",
     badge: "IN STOCK",
     specifications: {
       "Power Rating": "11 kW (15 HP)",
@@ -589,7 +1046,7 @@ const INDUSTRIAL_CATALOG = [
     price: 62000,
     oldPrice: 72000,
     sku: "DAN-FC102-45KW",
-    image: "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80",
+    image: "https://images.unsplash.com/photo-1581092334651-ddf26d9a09d0?auto=format&fit=crop&w=800&q=80",
     badge: "READY TO SHIP",
     specifications: {
       "Power Rating": "45 kW (60 HP)",
@@ -620,7 +1077,7 @@ const INDUSTRIAL_CATALOG = [
     price: 2450000,
     oldPrice: 2790000,
     sku: "HAAS-VF2-2026",
-    image: "https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&w=800&q=80",
+    image: "https://images.unsplash.com/photo-1565043589221-1a6fd9ae45c7?auto=format&fit=crop&w=800&q=80",
     badge: "OEM VERIFIED",
     specifications: {
       "Power Rating": "22.4 kW (30 HP) Vector",
@@ -775,39 +1232,239 @@ function Home() {
   const [activeTab, setActiveTab] = useState("Trending");
   const [email, setEmail] = useState("");
   const [notice, setNotice] = useState("");
-  const [addedCartIds, setAddedCartIds] = useState([]);
+
+  const getStoredWishlistIds = () => {
+    try {
+      const list = JSON.parse(localStorage.getItem("wishlist") || "[]");
+      return list.map((item) => String(item._id));
+    } catch {
+      return [];
+    }
+  };
+  const getStoredCompareIds = () => {
+    try {
+      const list = JSON.parse(localStorage.getItem("compareProducts") || "[]");
+      return list.map((item) => String(item._id));
+    } catch {
+      return [];
+    }
+  };
+  const getStoredCartIds = () => {
+    try {
+      const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+      return cart.map((item) => String(item._id));
+    } catch {
+      return [];
+    }
+  };
+
+  const [wishlistIds, setWishlistIds] = useState(getStoredWishlistIds);
+  const [compareIds, setCompareIds] = useState(getStoredCompareIds);
+  const [addedCartIds, setAddedCartIds] = useState(getStoredCartIds);
+
+  useEffect(() => {
+    const onWishlist = () => setWishlistIds(getStoredWishlistIds());
+    const onCompare = () => setCompareIds(getStoredCompareIds());
+    const onCart = () => setAddedCartIds(getStoredCartIds());
+
+    window.addEventListener("wishlist-updated", onWishlist);
+    window.addEventListener("compare-updated", onCompare);
+    window.addEventListener("cart-updated", onCart);
+
+    return () => {
+      window.removeEventListener("wishlist-updated", onWishlist);
+      window.removeEventListener("compare-updated", onCompare);
+      window.removeEventListener("cart-updated", onCart);
+    };
+  }, []);
+
+  const FALLBACK_IMAGES = [
+    "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80",
+    "https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?auto=format&fit=crop&w=800&q=80",
+    "https://images.unsplash.com/photo-1565043589221-1a6fd9ae45c7?auto=format&fit=crop&w=800&q=80",
+    "https://images.unsplash.com/photo-1581092921461-eab62e97a780?auto=format&fit=crop&w=800&q=80",
+    "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80",
+    "https://images.unsplash.com/photo-1581092334651-ddf26d9a09d0?auto=format&fit=crop&w=800&q=80",
+    "https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?auto=format&fit=crop&w=800&q=80",
+    "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80",
+  ];
+
   const fallbackProducts = INDUSTRIAL_CATALOG;
-  const products = state.items.length ? state.items.map((product, index) => ({ ...product, image: product.images?.[0]?.url || product.images?.[0] || fallbackProducts[index % fallbackProducts.length].image, price: product.price || fallbackProducts[index % fallbackProducts.length].price, oldPrice: product.oldPrice || fallbackProducts[index % fallbackProducts.length].oldPrice, badge: index % 3 === 0 ? "OEM VERIFIED" : "IN STOCK" })) : fallbackProducts;
+  const products = state.items.length
+    ? state.items.map((product, index) => {
+        const rawImg = product.images?.[0]?.url || product.images?.[0] || product.image;
+        const validImg = rawImg && !rawImg.includes("photo-1581092335397-9583fe92d232")
+          ? rawImg
+          : FALLBACK_IMAGES[index % FALLBACK_IMAGES.length];
+        return {
+          ...product,
+          image: validImg,
+          price: product.price || fallbackProducts[index % fallbackProducts.length].price,
+          oldPrice: product.oldPrice || fallbackProducts[index % fallbackProducts.length].oldPrice,
+          badge: index % 3 === 0 ? "OEM VERIFIED" : "IN STOCK",
+        };
+      })
+    : fallbackProducts;
+
   const categories = [["bi-gear-wide-connected", "Motors & Drives"], ["bi-cpu", "CNC Machining"], ["bi-droplet-half", "Pumps & Hydraulics"], ["bi-diagram-3", "Process Automation"], ["bi-lightning-charge", "Power & Switchgear"], ["bi-speedometer2", "Testing Instruments"], ["bi-power", "Motor Starters"], ["bi-broadcast-pin", "Sensors & Telemetry"], ["bi-bezier2", "Cables & Wiring"], ["bi-shield-check", "Safety Gear"]];
   const brands = ["SIEMENS", "ABB", "SCHNEIDER ELECTRIC", "L&T HEAVY ENG", "KIRLOSKAR", "DANFOSS", "CROMPTON", "HAVELLS INDUSTRIAL", "HONEYWELL"];
   const benefits = [["bi-truck", "Pan-India Freight Logistics", "Heavy equipment transport with real-time transit telemetry"], ["bi-patch-check", "Verified Manufacturer Specs", "Zero counterfeit risk with direct OEM test reports"], ["bi-shield-lock", "Escrow Milestone Payments", "Funds released strictly upon physical gate inspection"], ["bi-calculator", "Direct OEM Bulk Pricing", "Volume-tier matrix pricing without middleman markups"], ["bi-cpu", "AI-Powered Spec Matching", "Automated pairing of exact equipment equivalents"]];
   const promos = [{ title: "Precision CNC Centers.", copy: "Sub-micron accuracy and automated tool changers.", className: "promo-cobalt", icon: "bi-cpu" }, { title: "Severe-Duty Motors.", copy: "IE3/IE4 efficiency ratings with IP55 protection.", className: "promo-blue", icon: "bi-gear-wide-connected" }, { title: "Process Automation.", copy: "Field-programmable controllers and telemetry nodes.", className: "promo-ink", icon: "bi-diagram-3" }];
-  const displayProducts = products.slice(0, 6);
+  
+  const displayProducts = useMemo(() => {
+    if (activeTab === "Trending") return products.slice(0, 8);
+    const filtered = products.filter((p) => {
+      const cat = (p.category || "").toLowerCase();
+      const tab = activeTab.toLowerCase();
+      if (tab.includes("motors") && (cat.includes("motor") || cat.includes("drive"))) return true;
+      if (tab.includes("cnc") && cat.includes("cnc")) return true;
+      if (tab.includes("pump") && cat.includes("pump")) return true;
+      if (tab.includes("automation") && (cat.includes("process") || cat.includes("automation") || cat.includes("sensor"))) return true;
+      return cat.includes(tab);
+    });
+    return filtered.length ? filtered.slice(0, 8) : products.slice(0, 8);
+  }, [products, activeTab]);
+
   const addNotice = (message) => { setNotice(message); window.setTimeout(() => setNotice(""), 2400); };
-  const productImage = (product) => product.image || "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80";
+  const productImage = (product, index = 0) => {
+    if (product?.image && !product.image.includes("photo-1581092335397-9583fe92d232")) {
+      return product.image;
+    }
+    return FALLBACK_IMAGES[index % FALLBACK_IMAGES.length];
+  };
   const formatPrice = (price) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(price || 0);
   const saveWishlist = async (product) => {
-    if (user?.role === "buyer" && product._id.length === 24) {
-      try { const response = await api.post(`/buyer/wishlist/${product._id}`); notifyWishlistChanged(response.data.data); addNotice("Wishlist updated"); return; } catch { addNotice("Could not update wishlist"); return; }
+    const currentWishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
+    const isAlready = currentWishlist.some((item) => String(item._id) === String(product._id));
+
+    if (user?.role === "buyer" && product._id && product._id.length === 24) {
+      try {
+        const response = await api.post(`/buyer/wishlist/${product._id}`);
+        const updatedList = Array.isArray(response.data?.data) ? response.data.data : [];
+        localStorage.setItem("wishlist", JSON.stringify(updatedList));
+        notifyWishlistChanged(updatedList);
+        setWishlistIds(updatedList.map((x) => String(x._id)));
+        addNotice(isAlready ? "Removed from wishlist" : "Added to your wishlist");
+        return;
+      } catch {
+        addNotice("Could not update wishlist");
+        return;
+      }
     }
-    const wishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
-    localStorage.setItem("wishlist", JSON.stringify(wishlist.some((item) => item._id === product._id) ? wishlist : [...wishlist, product]));
-    addNotice("Added to your wishlist");
+
+    const next = isAlready
+      ? currentWishlist.filter((item) => String(item._id) !== String(product._id))
+      : [...currentWishlist, product];
+    localStorage.setItem("wishlist", JSON.stringify(next));
+    notifyWishlistChanged(next);
+    setWishlistIds(next.map((x) => String(x._id)));
+    addNotice(isAlready ? "Removed from wishlist" : "Added to your wishlist");
   };
   const compareProduct = (product) => {
     addToCompareQueue(product);
   };
   const addToCart = (product) => {
     const cart = JSON.parse(localStorage.getItem("cart") || "[]");
-    const existing = cart.find((item) => item._id === product._id);
-    localStorage.setItem("cart", JSON.stringify(existing ? cart.map((item) => item._id === product._id ? { ...item, quantity: (item.quantity || 1) + 1 } : item) : [...cart, { ...product, price: getDisplayPrice(product), quantity: 1 }]));
+    const existing = cart.find((item) => String(item._id) === String(product._id));
+    localStorage.setItem("cart", JSON.stringify(existing ? cart.map((item) => String(item._id) === String(product._id) ? { ...item, quantity: (item.quantity || 1) + 1 } : item) : [...cart, { ...product, price: getDisplayPrice(product), quantity: 1 }]));
     notifyCartChanged();
-    setAddedCartIds((ids) => ids.includes(product._id) ? ids : [...ids, product._id]);
+    setAddedCartIds((ids) => ids.includes(String(product._id)) ? ids : [...ids, String(product._id)]);
     addNotice("Added to cart");
   };
   const detailPath = (product) => `/product/${product.slug || product._id}`;
   const rememberProduct = (product) => localStorage.setItem(`catalogProduct:${product.slug || product._id}`, JSON.stringify(product));
-  const MarketplaceCard = ({ product, compact = false }) => <article className={`market-product-card ${compact ? "compact" : ""}`}><div className="market-product-image"><img src={productImage(product)} alt={product.name} loading="lazy" /><span className={`sale-pill ${product.badge === "IN STOCK" ? "new" : ""}`}>{product.badge}</span><span className="oem-verified-badge"><i className="bi bi-patch-check-fill" /> OEM Verified</span>{user?.role === "buyer" && <button className="icon-action" aria-label={`Save ${product.name}`} onClick={() => saveWishlist(product)}><i className="bi bi-heart" /></button>}</div><div className="market-product-body"><div className="product-brand-tag"><span>{product.brand}</span><span className="verified-dot">✓</span></div><Link to={detailPath(product)} onClick={() => rememberProduct(product)} className="product-title-link"><h3>{product.name}</h3></Link><div className="d-flex align-items-center gap-2 small text-warning"><i className="bi bi-star-fill" /> <span>{product.rating || "4.8"}</span><span className="text-secondary">(ISO 9001)</span></div><div className="price-row"><strong>{formatPrice(product.price)}</strong>{product.oldPrice && <del>{formatPrice(product.oldPrice)}</del>}</div><div className="product-actions"><button className="btn btn-outline-primary btn-sm" onClick={() => compareProduct(product)}>Compare</button>{user?.role === "buyer" && <button className="btn btn-primary btn-sm" onClick={() => addToCart(product)}>{addedCartIds.includes(product._id) ? "Added" : "Add to cart"}</button>}</div><Link to={detailPath(product)} onClick={() => rememberProduct(product)} className="product-details-link"><span>Specifications &amp; CAD</span><i className="bi bi-arrow-up-right" /></Link></div></article>;
+  const MarketplaceCard = ({ product, index = 0, compact = false }) => {
+    const isWish = wishlistIds.includes(String(product._id));
+    const isCart = addedCartIds.includes(String(product._id));
+    const isComparing = compareIds.includes(String(product._id));
+    const defaultFallback = FALLBACK_IMAGES[index % FALLBACK_IMAGES.length];
+
+    return (
+      <article className={`market-product-card ${compact ? "compact" : ""}`}>
+        <div className="market-product-image">
+          <img
+            src={productImage(product, index)}
+            alt={product.name}
+            loading="lazy"
+            onError={(e) => {
+              if (e.currentTarget.src !== defaultFallback) {
+                e.currentTarget.src = defaultFallback;
+              }
+            }}
+          />
+          {product.badge === "OEM VERIFIED" || product.isVerified ? (
+            <span className="oem-verified-badge">
+              <i className="bi bi-patch-check-fill" /> OEM Verified
+            </span>
+          ) : (
+            <span className={`sale-pill ${product.badge === "IN STOCK" ? "new" : ""}`}>{product.badge || "IN STOCK"}</span>
+          )}
+          <button
+            className={`icon-action ${isWish ? "active" : ""}`}
+            aria-label={`Save ${product.name}`}
+            onClick={() => saveWishlist(product)}
+            title={isWish ? "Remove from wishlist" : "Save to wishlist"}
+          >
+            <i className={`bi ${isWish ? "bi-heart-fill" : "bi-heart"}`} />
+          </button>
+        </div>
+        <div className="market-product-body">
+          <div className="product-brand-tag">
+            <span>{product.brand}</span>
+            <span className="verified-dot">✓</span>
+          </div>
+          <Link to={detailPath(product)} onClick={() => rememberProduct(product)} className="product-title-link">
+            <h3>{product.name}</h3>
+          </Link>
+          <div className="d-flex align-items-center gap-2 small text-warning">
+            <i className="bi bi-star-fill" /> <span>{product.rating || "4.8"}</span>
+            <span className="text-secondary">(ISO 9001)</span>
+          </div>
+          <div className="price-row">
+            <strong>{formatPrice(product.price)}</strong>
+            {product.oldPrice && <del>{formatPrice(product.oldPrice)}</del>}
+          </div>
+          <div className="product-actions mt-2">
+            <div className="product-btn-row">
+              <button
+                type="button"
+                className={`btn btn-sm btn-compare-action ${isComparing ? "active" : ""}`}
+                onClick={() => compareProduct(product)}
+                title="Compare product specifications"
+              >
+                <i className="bi bi-arrow-left-right" />
+                <span>{isComparing ? "Comparing" : "Compare"}</span>
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm btn-cart-action ${isCart ? "active" : ""}`}
+                onClick={() => addToCart(product)}
+                title="Add product to procurement cart"
+              >
+                <i className={`bi ${isCart ? "bi-check2" : "bi-cart-plus"}`} />
+                <span>{isCart ? "Added" : "Add to cart"}</span>
+              </button>
+            </div>
+            <div className="product-action-footer">
+              <button
+                type="button"
+                className={`btn-wishlist-inline ${isWish ? "active" : ""}`}
+                onClick={() => saveWishlist(product)}
+                title={isWish ? "Remove from wishlist" : "Add to wishlist"}
+              >
+                <i className={`bi ${isWish ? "bi-heart-fill" : "bi-heart"}`} />
+                <span>{isWish ? "Wishlisted" : "Wishlist"}</span>
+              </button>
+              <Link to={detailPath(product)} onClick={() => rememberProduct(product)} className="product-details-link">
+                <span>View Details</span>
+                <i className="bi bi-arrow-up-right" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </article>
+    );
+  };
 
   return (
     <div className="market-home">
@@ -932,7 +1589,9 @@ function Home() {
             ))}
           </div>
           <div className="product-rail">
-            {displayProducts.map(product => <MarketplaceCard key={product._id} product={product} />)}
+            {displayProducts.map((product, index) => (
+              <MarketplaceCard key={product._id} product={product} index={index} />
+            ))}
           </div>
         </div>
       </section>
@@ -1038,26 +1697,95 @@ function Home() {
             <span className="eyebrow dark">INDUSTRY MANDI TECHNICAL JOURNAL</span>
             <h2>Field Notes &amp; Procurement Guides</h2>
           </div>
-          <span className="view-link">Read engineering briefs <i className="bi bi-arrow-right" /></span>
+          <Link to="/faq" className="view-link">Read engineering briefs <i className="bi bi-arrow-right" /></Link>
         </div>
         <div className="blog-grid">
           <article className="blog-card">
-            <div className="blog-image" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=900&q=80')" }} />
-            <span className="eyebrow dark mt-3 px-3">TECHNICAL STANDARD · 6 MIN</span>
-            <h3 className="px-3">Specifying IE3 vs IE4 Motors in High Ambient Temperatures</h3>
-            <div className="px-3 pb-3"><a href="#journal" className="view-link">Read whitepaper <i className="bi bi-arrow-up-right" /></a></div>
+            <div className="blog-image-wrap">
+              <img
+                src="https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=900&q=80"
+                alt="Specifying IE3 vs IE4 Motors"
+                loading="lazy"
+              />
+              <span className="blog-category-badge">
+                <i className="bi bi-gear-wide-connected me-1" /> MOTORS &amp; DRIVES
+              </span>
+              <span className="blog-read-badge">
+                <i className="bi bi-clock me-1" /> 6 MIN READ
+              </span>
+            </div>
+            <div className="blog-body">
+              <span className="blog-eyebrow">TECHNICAL STANDARD · IE3 VS IE4</span>
+              <h3>Specifying IE3 vs IE4 Motors in High Ambient Temperatures</h3>
+              <p className="blog-excerpt">
+                Thermal derating curves, winding insulation limits, and life-cycle efficiency economics for severe ambient factory floors.
+              </p>
+              <div className="blog-footer">
+                <span className="blog-spec-tag"><i className="bi bi-file-earmark-pdf me-1" />OEM Whitepaper</span>
+                <Link to="/products?category=Motors%20%26%20Drives" className="blog-link">
+                  <span>Read whitepaper</span>
+                  <i className="bi bi-arrow-right" />
+                </Link>
+              </div>
+            </div>
           </article>
           <article className="blog-card">
-            <div className="blog-image" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&w=900&q=80')" }} />
-            <span className="eyebrow dark mt-3 px-3">CNC BENCHMARKS · 4 MIN</span>
-            <h3 className="px-3">Sub-Micron CNC Center Tolerances in Precision Machining</h3>
-            <div className="px-3 pb-3"><a href="#journal" className="view-link">Read whitepaper <i className="bi bi-arrow-up-right" /></a></div>
+            <div className="blog-image-wrap">
+              <img
+                src="https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?auto=format&fit=crop&w=900&q=80"
+                alt="Sub-Micron CNC Center Tolerances"
+                loading="lazy"
+              />
+              <span className="blog-category-badge">
+                <i className="bi bi-cpu me-1" /> CNC MACHINING
+              </span>
+              <span className="blog-read-badge">
+                <i className="bi bi-clock me-1" /> 4 MIN READ
+              </span>
+            </div>
+            <div className="blog-body">
+              <span className="blog-eyebrow">CNC BENCHMARKS · TOLERANCE MATRIX</span>
+              <h3>Sub-Micron CNC Center Tolerances in Precision Machining</h3>
+              <p className="blog-excerpt">
+                Thermal expansion compensation, spindle runout criteria, and 5-axis ball-screw positioning for aerospace-grade tolerances.
+              </p>
+              <div className="blog-footer">
+                <span className="blog-spec-tag"><i className="bi bi-file-earmark-pdf me-1" />Benchmark Report</span>
+                <Link to="/products?category=CNC%20Machining" className="blog-link">
+                  <span>Read whitepaper</span>
+                  <i className="bi bi-arrow-right" />
+                </Link>
+              </div>
+            </div>
           </article>
           <article className="blog-card">
-            <div className="blog-image" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=900&q=80')" }} />
-            <span className="eyebrow dark mt-3 px-3">AUTOMATION · 8 MIN</span>
-            <h3 className="px-3">Mitigating Harmonics with Variable Frequency Drives (VFDs)</h3>
-            <div className="px-3 pb-3"><a href="#journal" className="view-link">Read whitepaper <i className="bi bi-arrow-up-right" /></a></div>
+            <div className="blog-image-wrap">
+              <img
+                src="https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=900&q=80"
+                alt="Mitigating Harmonics with VFDs"
+                loading="lazy"
+              />
+              <span className="blog-category-badge">
+                <i className="bi bi-diagram-3 me-1" /> PROCESS AUTOMATION
+              </span>
+              <span className="blog-read-badge">
+                <i className="bi bi-clock me-1" /> 8 MIN READ
+              </span>
+            </div>
+            <div className="blog-body">
+              <span className="blog-eyebrow">AUTOMATION · HARMONIC DISTORTION</span>
+              <h3>Mitigating Harmonics with Variable Frequency Drives (VFDs)</h3>
+              <p className="blog-excerpt">
+                Total Harmonic Distortion (THD) suppression, passive harmonic filters, and IEEE 519 compliance for heavy drive loads.
+              </p>
+              <div className="blog-footer">
+                <span className="blog-spec-tag"><i className="bi bi-file-earmark-pdf me-1" />IEEE 519 Guide</span>
+                <Link to="/products?category=Process%20Automation" className="blog-link">
+                  <span>Read whitepaper</span>
+                  <i className="bi bi-arrow-right" />
+                </Link>
+              </div>
+            </div>
           </article>
         </div>
       </section>
@@ -1142,7 +1870,7 @@ function About() {
 
 function Contact() {
   const [sent, setSent] = useState(false);
-  return <main className="container py-5 info-page"><section className="contact-hero"><div><span className="eyebrow dark">CONTACT US</span><h1>Let’s move your next project forward.</h1><p>Whether you are sourcing a critical component, need help with an order, or want to list your products, our team is ready to help.</p></div><div className="contact-status"><span className="telemetry-pip" /> Support desk online <small>Typical reply within one business day</small></div></section><div className="row g-4 mt-2"><div className="col-lg-7"><section className="contact-form-card">{sent ? <div className="contact-success"><i className="bi bi-check-circle-fill" /><h2>Message received.</h2><p>Thanks for reaching out. A member of our team will review your request and reply shortly.</p><button className="btn btn-outline-light" onClick={() => setSent(false)}>Send another message</button></div> : <form onSubmit={(event) => { event.preventDefault(); setSent(true); }}><div className="contact-form-heading"><span className="eyebrow dark">START A CONVERSATION</span><h2>How can we help?</h2><p>Share a few details and we’ll route your request to the right team.</p></div><div className="row g-3"><div className="col-sm-6"><label htmlFor="contact-name">Name</label><input id="contact-name" required placeholder="Your name" /></div><div className="col-sm-6"><label htmlFor="contact-email">Work email</label><input id="contact-email" required type="email" placeholder="you@company.com" /></div><div className="col-12"><label htmlFor="contact-topic">What can we help with?</label><select id="contact-topic" defaultValue="Product sourcing"><option>Product sourcing</option><option>Order support</option><option>Become a vendor</option><option>Technical question</option><option>Other enquiry</option></select></div><div className="col-12"><label htmlFor="contact-message">Your message</label><textarea id="contact-message" rows="5" required placeholder="Tell us about the product, quantity, timeline, or issue..." /></div><div className="col-12"><button className="btn btn-primary">Send message <i className="bi bi-arrow-up-right ms-1" /></button></div></div></form>}</section></div><div className="col-lg-5"><div className="contact-detail-stack"><article><span className="contact-detail-icon"><i className="bi bi-envelope" /></span><div><small>EMAIL SUPPORT</small><h3>hello@industrymandi.local</h3><p>For product, account, and marketplace questions.</p></div></article><article><span className="contact-detail-icon"><i className="bi bi-headset" /></span><div><small>BUYER &amp; VENDOR DESK</small><h3>+91 76777 74700</h3><p>Monday–Friday · 9:00 AM–6:00 PM IST</p></div></article><article><span className="contact-detail-icon"><i className="bi bi-geo-alt" /></span><div><small>OPERATIONS HUB</small><h3>Mumbai, India</h3><p>Supporting industrial teams across India.</p></div></article></div></div></div></main>;
+  return <main className="container py-5 info-page"><section className="contact-hero"><div><span className="eyebrow dark">CONTACT US</span><h1>Let’s move your next project forward.</h1><p>Whether you are sourcing a critical component, need help with an order, or want to list your products, our team is ready to help.</p></div><div className="contact-status"><span className="telemetry-pip" /> Support desk online <small>Typical reply within one business day</small></div></section><div className="row g-4 mt-2"><div className="col-lg-7"><section className="contact-form-card">{sent ? <div className="contact-success"><i className="bi bi-check-circle-fill" /><h2>Message received.</h2><p>Thanks for reaching out. A member of our team will review your request and reply shortly.</p><button className="btn btn-outline-light" onClick={() => setSent(false)}>Send another message</button></div> : <form onSubmit={(event) => { event.preventDefault(); setSent(true); }}><div className="contact-form-heading"><span className="eyebrow dark">START A CONVERSATION</span><h2>How can we help?</h2><p>Share a few details and we’ll route your request to the right team.</p></div><div className="row g-3"><div className="col-sm-6"><label htmlFor="contact-name">Name</label><input id="contact-name" required placeholder="Your name" /></div><div className="col-sm-6"><label htmlFor="contact-email">Work email</label><input id="contact-email" required type="email" placeholder="you@company.com" /></div><div className="col-12"><label htmlFor="contact-topic">What can we help with?</label><select id="contact-topic" defaultValue="Product sourcing"><option>Product sourcing</option><option>Order support</option><option>Become a vendor</option><option>Technical question</option><option>Other enquiry</option></select></div><div className="col-12"><label htmlFor="contact-message">Your message</label><textarea id="contact-message" rows="5" required placeholder="Tell us about the product, quantity, timeline, or issue..." /></div><div className="col-12"><button className="btn btn-primary">Send message <i className="bi bi-arrow-up-right ms-1" /></button></div></div></form>}</section></div><div className="col-lg-5"><div className="contact-detail-stack"><article><span className="contact-detail-icon"><i className="bi bi-envelope" /></span><div><small>EMAIL SUPPORT</small><h3>hello@industrymandi.local</h3><p>For product, account, and marketplace questions.</p></div></article><article><span className="contact-detail-icon"><i className="bi bi-headset" /></span><div><small>BUYER &amp; VENDOR DESK</small><h3>+91 7903553221</h3><p>Monday–Friday · 9:00 AM–6:00 PM IST</p></div></article><article><span className="contact-detail-icon"><i className="bi bi-geo-alt" /></span><div><small>OPERATIONS HUB</small><h3>Bangalore, India</h3><p>Supporting industrial teams across India.</p></div></article></div></div></div></main>;
 }
 
 function Products() {
@@ -1256,7 +1984,7 @@ function Products() {
               </div>
               <div className="row g-4">
                 {products.map((p) => (
-                  <div className="col-sm-6 col-lg-4" key={p._id}>
+                  <div className="col-6 col-md-4 col-xl-3" key={p._id}>
                     <ProductCard
                       product={p}
                       selectable
@@ -1274,12 +2002,17 @@ function Products() {
   );
 }
 function Product() {
-  const { slug } = useParams(),
-    { user } = useAuth();
-  const [state, setState] = useState({ loading: true, data: null, error: "" }),
-    [recommendations, setRecommendations] = useState({ loading: true, data: null }),
-    [wishMessage, setWishMessage] = useState(""),
-    [cartAdded, setCartAdded] = useState(false);
+  const { slug } = useParams();
+  const { user } = useAuth();
+  const [state, setState] = useState({ loading: true, data: null, error: "" });
+  const [recommendations, setRecommendations] = useState({ loading: true, data: null });
+  const [wishMessage, setWishMessage] = useState("");
+  const [cartAdded, setCartAdded] = useState(false);
+  const [isWishlisted, setIsWishlisted] = useState(false);
+
+  const product = state.data?.product;
+  const productId = product?._id;
+
   const load = () => {
     setState({ loading: true, data: null, error: "" });
     api
@@ -1288,235 +2021,681 @@ function Product() {
       .catch((e) => {
         const saved = localStorage.getItem(`catalogProduct:${slug}`);
         if (saved) {
-          const product = JSON.parse(saved);
-          setState({ loading: false, data: { product, offers: [], bestOffer: null, reviews: [] }, error: "" });
+          try {
+            const parsed = JSON.parse(saved);
+            setState({ loading: false, data: { product: parsed, offers: [], bestOffer: null, reviews: [] }, error: "" });
+            return;
+          } catch {}
+        }
+        const fallback = INDUSTRIAL_CATALOG.find((p) => p.slug === slug || p._id === slug);
+        if (fallback) {
+          setState({ loading: false, data: { product: fallback, offers: [], bestOffer: null, reviews: [] }, error: "" });
           return;
         }
         setState({ loading: false, data: null, error: e.response?.data?.message || e.message });
       });
   };
+
   useEffect(load, [slug]);
+
   useEffect(() => {
     let active = true;
     setRecommendations({ loading: true, data: null });
+
+    const applyFallback = () => {
+      if (!active) return;
+      const currentProd = product || INDUSTRIAL_CATALOG.find((p) => p.slug === slug || p._id === slug);
+      const currentCat = currentProd?.category;
+      const others = INDUSTRIAL_CATALOG.filter((p) => p.slug !== slug && p._id !== slug);
+      const catMatches = others.filter((p) => !currentCat || p.category === currentCat);
+      const similarPool = catMatches.length >= 2 ? catMatches : others;
+      const similar = similarPool.slice(0, 4).map((p) => ({
+        product: p,
+        reason: `Matched by category (${p.category}) & technical tier`
+      }));
+      const diffCatMatches = others.filter((p) => p.category !== currentCat);
+      const boughtTogether = (diffCatMatches.length ? diffCatMatches : others).slice(0, 3).map((p) => ({
+        product: p,
+        reason: "Suggested companion machinery for plant setup",
+        fallback: true
+      }));
+      setRecommendations({
+        loading: false,
+        data: {
+          similar,
+          boughtTogether,
+          boughtTogetherBasedOnOrders: false
+        }
+      });
+    };
+
     api.get(`/products/${slug}/recommendations`)
-      .then((response) => active && setRecommendations({ loading: false, data: response.data.data }))
-      .catch(() => active && setRecommendations({ loading: false, data: null }));
+      .then((response) => {
+        if (!active) return;
+        const resData = response.data?.data;
+        if (resData && (resData.similar?.length || resData.boughtTogether?.length)) {
+          setRecommendations({ loading: false, data: resData });
+        } else {
+          applyFallback();
+        }
+      })
+      .catch(() => {
+        applyFallback();
+      });
+
     return () => { active = false; };
-  }, [slug]);
+  }, [slug, product]);
+
+  const getStoredCompareIds = () => {
+    try {
+      const list = JSON.parse(localStorage.getItem("compareProducts") || "[]");
+      return list.map((item) => String(item._id));
+    } catch {
+      return [];
+    }
+  };
+  const [compareIds, setCompareIds] = useState(getStoredCompareIds);
+
+  useEffect(() => {
+    const onCompare = () => setCompareIds(getStoredCompareIds());
+    window.addEventListener("compare-updated", onCompare);
+    return () => window.removeEventListener("compare-updated", onCompare);
+  }, []);
+
+  const isCompared = compareIds.includes(String(productId));
+
+  const handleCompareToggle = () => {
+    if (!product) return;
+    if (isCompared) {
+      removeFromCompareQueue(product._id);
+      setWishMessage("Removed from comparison queue.");
+    } else {
+      addToCompareQueue(product);
+      setWishMessage("Added to comparison queue.");
+    }
+  };
+
+  useEffect(() => {
+    if (!productId) {
+      setIsWishlisted(false);
+      return;
+    }
+    const checkWish = () => {
+      try {
+        const list = JSON.parse(localStorage.getItem("wishlist") || "[]");
+        setIsWishlisted(list.some((item) => String(item._id) === String(productId)));
+      } catch {
+        setIsWishlisted(false);
+      }
+    };
+    checkWish();
+    window.addEventListener("wishlist-updated", checkWish);
+    return () => window.removeEventListener("wishlist-updated", checkWish);
+  }, [productId]);
+
   if (state.loading) return <Loading label="Loading machinery intelligence…" />;
-  if (state.error) return <ErrorState message={state.error} onRetry={load} />;
-  const { product, offers, bestOffer, reviews } = state.data;
-  const wishlist = () =>
-    api
-      .post(`/buyer/wishlist/${product._id}`)
-      .then((response) => { notifyWishlistChanged(response.data.data); setWishMessage("Wishlist updated."); })
-      .catch((e) => setWishMessage(e.response?.data?.message || e.message));
+  if (state.error || !state.data?.product) return <ErrorState message={state.error || "Product not found"} onRetry={load} />;
+
+  const { offers = [], bestOffer = null, reviews = [] } = state.data;
+
+  const handleWishlistToggle = async () => {
+    if (!product) return;
+    const currentWishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
+    const isAlready = currentWishlist.some((item) => String(item._id) === String(product._id));
+
+    if (user?.role === "buyer" && product._id && product._id.length === 24) {
+      try {
+        const response = await api.post(`/buyer/wishlist/${product._id}`);
+        const updatedList = Array.isArray(response.data?.data) ? response.data.data : [];
+        localStorage.setItem("wishlist", JSON.stringify(updatedList));
+        notifyWishlistChanged(updatedList);
+        setIsWishlisted(updatedList.some((item) => String(item._id) === String(product._id)));
+        setWishMessage(isAlready ? "Removed from wishlist." : "Saved to wishlist.");
+        return;
+      } catch (e) {
+        setWishMessage(e.response?.data?.message || e.message);
+        return;
+      }
+    }
+
+    const next = isAlready
+      ? currentWishlist.filter((item) => String(item._id) !== String(product._id))
+      : [...currentWishlist, product];
+    localStorage.setItem("wishlist", JSON.stringify(next));
+    notifyWishlistChanged(next);
+    setIsWishlisted(!isAlready);
+    setWishMessage(isAlready ? "Removed from wishlist." : "Saved to wishlist.");
+  };
+
   const addToCart = () => {
+    if (!product) return;
     const cart = JSON.parse(localStorage.getItem("cart") || "[]");
-    const existing = cart.find((item) => item._id === product._id);
-    localStorage.setItem("cart", JSON.stringify(existing ? cart.map((item) => item._id === product._id ? { ...item, quantity: (item.quantity || 1) + 1 } : item) : [...cart, { ...product, price: getDisplayPrice(product), quantity: 1 }]));
+    const existing = cart.find((item) => String(item._id) === String(product._id));
+    localStorage.setItem("cart", JSON.stringify(existing ? cart.map((item) => String(item._id) === String(product._id) ? { ...item, quantity: (item.quantity || 1) + 1 } : item) : [...cart, { ...product, price: getDisplayPrice(product), quantity: 1 }]));
     notifyCartChanged();
     setCartAdded(true);
   };
   const primary = (product.images || []).find((x) => x.isPrimary) || (product.images || [])[0];
   const heroImage = typeof primary === "string" ? primary : primary?.url || product.image || "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=1200&q=80";
+  const displayPrice = bestOffer?.price || product.price || getDisplayPrice(product) || 45000;
+  const oldPrice = product.oldPrice || Math.round(displayPrice * 1.15);
+  const discountPercent = oldPrice > displayPrice ? Math.round(((oldPrice - displayPrice) / oldPrice) * 100) : null;
 
   return (
-    <main className="container py-5">
-      <div className="row g-5">
-        <div className="col-lg-7">
-          <div className="product-hero-art">
-            <img src={heroImage} alt={product.name} />
-            <span className="oem-verified-badge" style={{ top: 20, right: 20 }}>
-              <i className="bi bi-patch-check-fill" /> OEM Verified Listing
-            </span>
-          </div>
-          <span className="eyebrow dark mt-4 d-block">
-            {product.brand} · {product.category}
-          </span>
-          <h1>{product.name}</h1>
-          <p className="small text-secondary font-monospace">SKU: {product.sku || `IM-${product._id ? product._id.slice(-6).toUpperCase() : "10492"}`}</p>
-          {user?.role === "vendor" && (
-            <Link
-              className="btn btn-primary btn-sm mb-3"
-              to={`/vendor/pairing?product=${product._id}`}
-            >
-              <i className="bi bi-link-45deg me-1" />
-              Pair this product
-            </Link>
-          )}
-          {user?.role === "admin" && (
-            <Link
-              className="btn btn-outline-primary btn-sm mb-3"
-              to="/admin/pairings?status=pending"
-            >
-              <i className="bi bi-link-45deg me-1" />
-              Review pairings for this product
-            </Link>
-          )}
-          {user?.role === "buyer" && (
-            <>
-              <button className="btn btn-outline-primary btn-sm mb-3" onClick={wishlist}>
-                <i className="bi bi-heart me-1" />
-                Save to wishlist
-              </button>
-              <button className="btn btn-primary btn-sm mb-3 ms-2" onClick={addToCart}>
-                {cartAdded ? "Added" : "Add to cart"}
-              </button>
-              {wishMessage && <span className="ms-2 small text-success">{wishMessage}</span>}
-            </>
-          )}
-          <p className="lead text-secondary">{product.description}</p>
-          {Object.keys(product.specifications || {}).length > 0 && (
-            <>
-              <h3 className="mt-5">Technical specifications</h3>
-              <div className="spec-grid">
-                {Object.entries(product.specifications || {}).map(([k, v]) => (
-                  <div key={k}>
-                    <span>{k}</span>
-                    <b>{String(v)}</b>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          {Object.keys(product.technicalSpecifications || {}).length > 0 && (
-            <>
-              <h3 className="mt-5">OEM technical details</h3>
-              <div className="spec-grid">
-                {Object.entries(product.technicalSpecifications || {}).map(([k, v]) => (
-                  <div key={k}>
-                    <span>{k}</span>
-                    <b>{String(v)}</b>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          {product.oemManual?.url && (
-            <a className="btn btn-outline-primary mt-4" href={product.oemManual.url} target="_blank" rel="noreferrer">
-              <i className="bi bi-file-earmark-pdf me-2" />
-              {product.oemManual.title || "Open OEM manual"}
-            </a>
-          )}
-        </div>
-        <aside className="col-lg-5">
-          <div className="offer-panel">
-            <span className="eyebrow dark">BEST VERIFIED PRICE</span>
-            <h2>{bestOffer ? fmt(bestOffer.price) : "No active offer"}</h2>
-            {bestOffer && (
-              <p>
-                from{" "}
-                <b>
-                  {bestOffer.vendor?.profile?.company || bestOffer.vendor?.name}
-                </b>
-              </p>
-            )}
-            {bestOffer?.sellerUrl ? (
-              <a
-                className="btn btn-primary w-100"
-                href={bestOffer.sellerUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Buy from seller
-              </a>
-            ) : (
-              <button className="btn btn-primary w-100" disabled>
-                No seller link available
-              </button>
-            )}
-          </div>
-          <h3 className="mt-4">Compare prices</h3>
-          {offers.map((o) => (
-            <div className="offer-row align-items-center" key={o._id}>
-              <span>
-                {o.vendor?.profile?.company || o.vendor?.name}
-                <small>{o.stock.replace("_", " ")}</small>
+    <main className="container py-4 product-detail-page">
+      {/* Breadcrumbs */}
+      <nav className="product-breadcrumbs mb-3" aria-label="breadcrumb">
+        <Link to="/">Home</Link>
+        <i className="bi bi-chevron-right" />
+        <Link to="/products">Machinery Catalog</Link>
+        <i className="bi bi-chevron-right" />
+        <Link to={`/products?category=${encodeURIComponent(product.category || "")}`}>{product.category || "Industrial Equipment"}</Link>
+        <i className="bi bi-chevron-right" />
+        <span>{product.name}</span>
+      </nav>
+
+      {/* Hero Section: Fitted 2-Column Grid */}
+      <div className="row g-4 align-items-stretch mb-4">
+        {/* Left Column: Product Gallery & Trust Strip */}
+        <div className="col-lg-6 d-flex flex-column">
+          <div className="product-gallery-card h-100 d-flex flex-column justify-content-between">
+            <div className="product-hero-art">
+              <img src={heroImage} alt={product.name} />
+              <span className="oem-verified-badge" style={{ top: 14, left: 14, right: "auto", position: "absolute" }}>
+                <i className="bi bi-patch-check-fill" /> OEM Verified Listing
               </span>
-              <div className="d-flex align-items-center gap-3">
-                <b>{fmt(o.price)}</b>
-                {o.sellerUrl ? (
-                  <a
-                    className="btn btn-sm btn-outline-primary"
-                    href={o.sellerUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Buy from seller
-                  </a>
-                ) : (
-                  <span className="small text-secondary">No seller link</span>
-                )}
+              {product.badge && product.badge !== "OEM VERIFIED" && (
+                <span className="sale-pill new" style={{ top: 14, right: 14, left: "auto", position: "absolute" }}>
+                  {product.badge}
+                </span>
+              )}
+            </div>
+
+            <div className="product-trust-strip mt-3">
+              <div className="trust-pill">
+                <i className="bi bi-shield-check" />
+                <div>
+                  <strong>Escrow Gate Inspection</strong>
+                  <span>Funds released upon physical verification</span>
+                </div>
+              </div>
+              <div className="trust-pill">
+                <i className="bi bi-truck" />
+                <div>
+                  <strong>Pan-India Freight</strong>
+                  <span>Insured transit with live GPS tracking</span>
+                </div>
+              </div>
+              <div className="trust-pill">
+                <i className="bi bi-file-earmark-check" />
+                <div>
+                  <strong>OEM Test Certificate</strong>
+                  <span>Factory serial test report included</span>
+                </div>
               </div>
             </div>
-          ))}
-          <h3 className="mt-5">Verified reviews</h3>
-          {reviews.length ? (
-            reviews.map((r) => (
-              <div className="review" key={r._id}>
-                <b>{r.title}</b>
-                <span className="rating">★ {r.rating}</span>
-                <p>{r.review}</p>
+          </div>
+        </div>
+
+        {/* Right Column: Title, Telemetry, Pricing & Actions */}
+        <div className="col-lg-6 d-flex flex-column">
+          <div className="product-info-card h-100 justify-content-between">
+            <div>
+              <div className="d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap">
+                <span className="product-brand-badge">
+                  <i className="bi bi-building me-1" /> {product.brand || "OEM Manufacturer"}
+                </span>
+                <span className="product-sku-tag font-monospace">
+                  SKU: {product.sku || `IM-${product._id ? String(product._id).slice(-6).toUpperCase() : "10492"}`}
+                </span>
               </div>
-            ))
-          ) : (
-            <p className="text-secondary">No approved reviews yet.</p>
+
+              <h1 className="product-detail-title">{product.name}</h1>
+
+              <div className="d-flex align-items-center gap-3 my-2 flex-wrap">
+                <div className="d-flex align-items-center gap-1 text-warning small">
+                  <i className="bi bi-star-fill" />
+                  <strong>{product.rating || "4.8"}</strong>
+                  <span className="text-secondary ms-1">({product.reviewCount || 24} verified buyer reviews)</span>
+                </div>
+                <span className="text-secondary">·</span>
+                <span className="badge bg-dark-subtle text-info-emphasis border border-info-subtle">
+                  <i className="bi bi-patch-check me-1" /> ISO 9001:2015 Tier-1
+                </span>
+              </div>
+
+              {/* Pricing Box */}
+              <div className="product-pricing-box my-3">
+                <span className="pricing-eyebrow">VERIFIED OEM DIRECT PRICE</span>
+                <div className="d-flex align-items-baseline gap-3 my-1 flex-wrap">
+                  <span className="display-price">{fmt(displayPrice)}</span>
+                  {oldPrice && (
+                    <>
+                      <del className="old-price">{fmt(oldPrice)}</del>
+                      {discountPercent && <span className="discount-badge">Save {discountPercent}%</span>}
+                    </>
+                  )}
+                </div>
+                <div className="pricing-meta">
+                  <span><i className="bi bi-check-circle-fill text-success me-1" /> Excl. 18% GST (Tax Invoice Provided)</span>
+                  <span><i className="bi bi-box-seam text-primary me-1" /> In Stock · Ready for dispatch within 24 hours</span>
+                </div>
+              </div>
+
+              {/* Action Cluster with prominent Compare Button */}
+              <div className="product-action-cluster my-3">
+                <div className="d-flex gap-2 flex-wrap">
+                  {/* 1. Add to Cart */}
+                  <button
+                    className={`btn btn-lg ${cartAdded ? "btn-success" : "btn-primary"} flex-grow-1`}
+                    onClick={addToCart}
+                  >
+                    <i className={`bi ${cartAdded ? "bi-check2-circle" : "bi-cart-plus"} me-2`} />
+                    {cartAdded ? "Added to Cart" : "Add to Cart"}
+                  </button>
+
+                  {/* 2. Compare Products Button (Requested!) */}
+                  <button
+                    className={`btn btn-lg ${isCompared ? "btn-info text-white" : "btn-outline-primary"} flex-grow-1`}
+                    onClick={handleCompareToggle}
+                    title="Add to SpecMatrix Compare"
+                  >
+                    <i className={`bi ${isCompared ? "bi-check2-circle" : "bi-arrow-left-right"} me-2`} />
+                    {isCompared ? "In Comparison" : "Compare Product"}
+                  </button>
+
+                  {/* 3. Wishlist Button */}
+                  <button
+                    className={`btn btn-lg ${isWishlisted ? "btn-danger" : "btn-outline-secondary"}`}
+                    onClick={handleWishlistToggle}
+                    title={isWishlisted ? "Remove from wishlist" : "Save to wishlist"}
+                  >
+                    <i className={`bi ${isWishlisted ? "bi-heart-fill" : "bi-heart"}`} />
+                  </button>
+                </div>
+
+                {/* Secondary Compare Row: Direct Matrix Launch */}
+                <div className="compare-quick-row">
+                  <span className="small text-secondary">
+                    <i className="bi bi-cpu me-1" /> Side-by-side spec comparison
+                  </span>
+                  <Link
+                    to={`/compare?ids=${[product._id, ...compareIds.filter(id => id !== String(product._id))].slice(0, 4).join(",")}`}
+                    className="btn btn-sm btn-outline-info text-decoration-none"
+                  >
+                    <i className="bi bi-table me-1" />
+                    Launch SpecMatrix Compare ({compareIds.includes(String(product._id)) ? compareIds.length : compareIds.length + 1}) <i className="bi bi-arrow-right ms-1" />
+                  </Link>
+                </div>
+
+                {wishMessage && (
+                  <div className="alert alert-success py-2 px-3 mt-2 mb-0 small d-flex align-items-center gap-2">
+                    <i className="bi bi-check-circle-fill" /> {wishMessage}
+                  </div>
+                )}
+              </div>
+
+              {/* Roles links */}
+              {user?.role === "vendor" && (
+                <Link className="btn btn-primary btn-sm mb-2" to={`/vendor/pairing?product=${product._id}`}>
+                  <i className="bi bi-link-45deg me-1" /> Pair this product
+                </Link>
+              )}
+              {user?.role === "admin" && (
+                <Link className="btn btn-outline-primary btn-sm mb-2" to="/admin/pairings?status=pending">
+                  <i className="bi bi-link-45deg me-1" /> Review pairings for this product
+                </Link>
+              )}
+            </div>
+
+            {/* Product Summary / Description */}
+            <div className="product-summary-block pt-2">
+              <h3 className="h6 text-uppercase fw-bold text-secondary mb-1">Equipment Overview</h3>
+              <p className="text-secondary mb-0 small leading-relaxed">{product.description || "High-performance precision industrial equipment built for continuous continuous production and demanding industrial environments."}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Middle Section: Technical Specifications Grid & OEM Details (if present) */}
+      {(Object.keys(product.specifications || {}).length > 0 ||
+        Object.keys(product.technicalSpecifications || {}).length > 0 ||
+        product.oemManual?.url) && (
+        <div className="row g-4 mb-4">
+          {Object.keys(product.specifications || {}).length > 0 && (
+            <div className={Object.keys(product.technicalSpecifications || {}).length > 0 ? "col-lg-6" : "col-12"}>
+              <div className="spec-matrix-card h-100">
+                <h2><i className="bi bi-sliders text-primary" /> Technical Specifications</h2>
+                <div className="spec-grid">
+                  {Object.entries(product.specifications || {}).map(([k, v]) => (
+                    <div key={k}>
+                      <span>{k}</span>
+                      <b>{String(v)}</b>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           )}
-        </aside>
+
+          {Object.keys(product.technicalSpecifications || {}).length > 0 && (
+            <div className={Object.keys(product.specifications || {}).length > 0 ? "col-lg-6" : "col-12"}>
+              <div className="spec-matrix-card h-100">
+                <h2><i className="bi bi-award text-primary" /> OEM Technical Details &amp; Standards</h2>
+                <div className="spec-grid">
+                  {Object.entries(product.technicalSpecifications || {}).map(([k, v]) => (
+                    <div key={k}>
+                      <span>{k}</span>
+                      <b>{String(v)}</b>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {product.oemManual?.url && (
+            <div className="col-12">
+              <a className="btn btn-outline-primary" href={product.oemManual.url} target="_blank" rel="noreferrer">
+                <i className="bi bi-file-earmark-pdf me-2" />
+                {product.oemManual.title || "Download Factory Manual & Wiring Diagram"}
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Verified Vendor Offers & Verified Buyer Reviews — in ONE line (side by side in 2 equal columns) */}
+      <div className="row g-4 mb-4">
+        <div className="col-md-6">
+          <div className="vendor-offers-card h-100">
+            <h3 className="h5 mb-3 text-white"><i className="bi bi-shop text-primary me-2" /> Verified Vendor Offers</h3>
+            {offers.length ? (
+              offers.map((o) => (
+                <div className="offer-row align-items-center mb-2 p-2 rounded bg-dark-subtle" key={o._id}>
+                  <span>
+                    <strong>{o.vendor?.profile?.company || o.vendor?.name}</strong>
+                    <br />
+                    <small className="text-secondary">{o.stock?.replace("_", " ") || "In Stock"}</small>
+                  </span>
+                  <div className="d-flex align-items-center gap-2">
+                    <b className="text-white">{fmt(o.price)}</b>
+                    {o.sellerUrl ? (
+                      <a className="btn btn-sm btn-outline-primary" href={o.sellerUrl} target="_blank" rel="noreferrer">
+                        Buy
+                      </a>
+                    ) : (
+                      <span className="badge bg-success">Direct</span>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="p-3 text-secondary small bg-dark-subtle rounded">
+                <i className="bi bi-shield-check text-success me-1" /> Direct OEM Factory Allocation. Certified by Industry Mandi Exchange.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="col-md-6">
+          <div className="reviews-card h-100">
+            <h3 className="h5 mb-3 text-white"><i className="bi bi-chat-square-quote text-primary me-2" /> Verified Buyer Reviews</h3>
+            {reviews.length ? (
+              reviews.map((r) => (
+                <div className="review mb-3 pb-2 border-bottom border-secondary-subtle" key={r._id}>
+                  <div className="d-flex justify-content-between align-items-center mb-1">
+                    <strong className="text-white small">{r.title}</strong>
+                    <span className="text-warning small">★ {r.rating}</span>
+                  </div>
+                  <p className="text-secondary small mb-0">{r.review}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-secondary small mb-0">No buyer reviews yet. Verified procurement reviews are published after physical delivery confirmation.</p>
+            )}
+          </div>
+        </div>
       </div>
       {!recommendations.loading && recommendations.data && (
         <section className="recommendations-section" aria-label="Product recommendations">
-          <div className="recommendation-heading">
-            <div>
-              <span className="eyebrow dark">SMART RECOMMENDATIONS</span>
-              <h2>Similar products</h2>
-              <p>Compare verified alternatives with comparable specifications.</p>
-            </div>
-            <Link to={`/products?category=${encodeURIComponent(product.category)}`} className="view-link">View all {product.category} <i className="bi bi-arrow-right" /></Link>
-          </div>
-          <div className="recommendation-grid">
-            {recommendations.data.similar.map(({ product: item, reason }) => <RecommendationCard key={item._id} product={item} reason={reason} />)}
-          </div>
-          <div className="recommendation-heading bought-together-heading">
-            <div>
-              <span className="eyebrow dark">COMPLETE YOUR PURCHASE</span>
-              <h2>Frequently bought together</h2>
-              <p>{recommendations.data.boughtTogetherBasedOnOrders ? "Based on verified marketplace order patterns." : "Suggested companions while we collect enough order history."}</p>
-            </div>
-          </div>
-          <div className="recommendation-grid">
-            {recommendations.data.boughtTogether.map(({ product: item, reason, fallback }) => <RecommendationCard key={item._id} product={item} reason={reason} fallback={fallback} />)}
-          </div>
+          {recommendations.data.similar?.length > 0 && (
+            <>
+              <div className="recommendation-heading">
+                <div>
+                  <span className="eyebrow dark">PRECISION SPEC MATCHING</span>
+                  <h2>Similar products &amp; alternatives</h2>
+                  <p>Compare verified industrial alternatives with comparable technical specifications.</p>
+                </div>
+                <Link to={`/products?category=${encodeURIComponent(product.category || "")}`} className="view-link">
+                  View all in {product.category || "category"} <i className="bi bi-arrow-right" />
+                </Link>
+              </div>
+              <div className="recommendation-grid">
+                {recommendations.data.similar.map(({ product: item, reason }) => (
+                  <RecommendationCard key={item._id} product={item} reason={reason} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {recommendations.data.boughtTogether?.length > 0 && (
+            <>
+              <div className="recommendation-heading bought-together-heading">
+                <div>
+                  <span className="eyebrow dark">COMPLETE YOUR INSTALLATION</span>
+                  <h2>Frequently bought together</h2>
+                  <p>{recommendations.data.boughtTogetherBasedOnOrders ? "Based on verified plant procurement and marketplace order patterns." : "Suggested companion machinery and accessories for complete commissioning."}</p>
+                </div>
+              </div>
+              <div className="recommendation-grid">
+                {recommendations.data.boughtTogether.map(({ product: item, reason, fallback }) => (
+                  <RecommendationCard key={item._id} product={item} reason={reason} fallback={fallback} />
+                ))}
+              </div>
+            </>
+          )}
         </section>
       )}
     </main>
   );
 }
+
 function RecommendationCard({ product, reason, fallback }) {
   const { user } = useAuth();
-  const [added, setAdded] = useState(false);
-  const image = (product.images || []).find((item) => item.isPrimary) || product.images?.[0];
-  const imageUrl = typeof image === "string" ? image : image?.url;
-  const addToCart = () => {
+  const [added, setAdded] = useState(() => {
+    try {
+      const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+      return cart.some((item) => String(item._id) === String(product._id));
+    } catch {
+      return false;
+    }
+  });
+
+  const getWishlistState = () => {
+    try {
+      const list = JSON.parse(localStorage.getItem("wishlist") || "[]");
+      return list.some((item) => String(item._id) === String(product._id));
+    } catch {
+      return false;
+    }
+  };
+  const [isWishlisted, setIsWishlisted] = useState(getWishlistState);
+
+  const getCompareState = () => {
+    try {
+      const list = JSON.parse(localStorage.getItem("compareProducts") || "[]");
+      return list.some((item) => String(item._id) === String(product._id));
+    } catch {
+      return false;
+    }
+  };
+  const [isCompared, setIsCompared] = useState(getCompareState);
+
+  useEffect(() => {
+    const onWishlist = () => setIsWishlisted(getWishlistState());
+    const onCart = () => {
+      try {
+        const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+        setAdded(cart.some((item) => String(item._id) === String(product._id)));
+      } catch {}
+    };
+    const onCompare = () => setIsCompared(getCompareState());
+
+    window.addEventListener("wishlist-updated", onWishlist);
+    window.addEventListener("cart-updated", onCart);
+    window.addEventListener("compare-updated", onCompare);
+    return () => {
+      window.removeEventListener("wishlist-updated", onWishlist);
+      window.removeEventListener("cart-updated", onCart);
+      window.removeEventListener("compare-updated", onCompare);
+    };
+  }, [product._id]);
+
+  const toggleWishlist = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const currentWishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
+    const isAlready = currentWishlist.some((item) => String(item._id) === String(product._id));
+
+    if (user?.role === "buyer" && product._id && product._id.length === 24) {
+      try {
+        const response = await api.post(`/buyer/wishlist/${product._id}`);
+        const updatedList = Array.isArray(response.data?.data) ? response.data.data : [];
+        localStorage.setItem("wishlist", JSON.stringify(updatedList));
+        notifyWishlistChanged(updatedList);
+        setIsWishlisted(updatedList.some((item) => String(item._id) === String(product._id)));
+        return;
+      } catch {}
+    }
+
+    const next = isAlready
+      ? currentWishlist.filter((item) => String(item._id) !== String(product._id))
+      : [...currentWishlist, product];
+    localStorage.setItem("wishlist", JSON.stringify(next));
+    notifyWishlistChanged(next);
+    setIsWishlisted(!isAlready);
+  };
+
+  const handleToggleCompare = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isCompared) {
+      removeFromCompareQueue(product._id);
+      setIsCompared(false);
+    } else {
+      addToCompareQueue(product);
+      setIsCompared(true);
+    }
+  };
+
+  const addToCart = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     const cart = JSON.parse(localStorage.getItem("cart") || "[]");
-    const existing = cart.find((item) => item._id === product._id);
-    localStorage.setItem("cart", JSON.stringify(existing ? cart.map((item) => item._id === product._id ? { ...item, quantity: (item.quantity || 1) + 1 } : item) : [...cart, { ...product, price: getDisplayPrice(product), quantity: 1 }]));
+    const existing = cart.find((item) => String(item._id) === String(product._id));
+    localStorage.setItem(
+      "cart",
+      JSON.stringify(
+        existing
+          ? cart.map((item) => (String(item._id) === String(product._id) ? { ...item, quantity: (item.quantity || 1) + 1 } : item))
+          : [...cart, { ...product, price: getDisplayPrice(product), quantity: 1 }]
+      )
+    );
     notifyCartChanged();
     setAdded(true);
   };
-  return <article className="recommendation-card">
-    <Link to={`/product/${product.slug}`} className="recommendation-image" aria-label={`View ${product.name}`}>
-      {imageUrl ? <img src={imageUrl} alt={product.name} /> : <i className="bi bi-box-seam" />}
-    </Link>
-    <div className="recommendation-content">
-      <span className={`recommendation-tag${fallback ? " muted" : ""}`}>{fallback ? "Suggested companion" : "Recommended match"}</span>
-      <Link to={`/product/${product.slug}`} className="recommendation-name">{product.name}</Link>
-      <p>{reason}</p>
-      <div><strong>{fmt(getDisplayPrice(product))}</strong>{user?.role === "buyer" ? <button className="recommendation-action" onClick={addToCart}>{added ? "Added" : "Add to cart"}</button> : <Link to={`/product/${product.slug}`} className="recommendation-action">View item <i className="bi bi-arrow-up-right" /></Link>}</div>
-    </div>
-  </article>;
+
+  const primary = (product.images || []).find((item) => item.isPrimary) || product.images?.[0];
+  const imageUrl = typeof primary === "string" ? primary : primary?.url || product.image || "https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?auto=format&fit=crop&w=800&q=80";
+
+  return (
+    <article className="recommendation-card">
+      <div className="recommendation-image-wrap">
+        <Link to={`/product/${product.slug || product._id}`} aria-label={`View ${product.name}`}>
+          <img
+            src={imageUrl}
+            alt={product.name}
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.src = "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80";
+            }}
+          />
+        </Link>
+        <span className={`recommendation-card-badge ${fallback ? "companion" : "match"}`}>
+          <i className={`bi ${fallback ? "bi-puzzle" : "bi-cpu"}`} />
+          {fallback ? "Companion" : "Spec Match"}
+        </span>
+        <button
+          type="button"
+          className={`recommendation-wishlist-btn ${isWishlisted ? "active" : ""}`}
+          onClick={toggleWishlist}
+          title={isWishlisted ? "Remove from wishlist" : "Save to wishlist"}
+          aria-label="Wishlist toggle"
+        >
+          <i className={`bi ${isWishlisted ? "bi-heart-fill" : "bi-heart"}`} />
+        </button>
+      </div>
+
+      <div className="recommendation-content">
+        <div className="recommendation-brand-row">
+          <span className="recommendation-brand">{product.brand || product.category || "OEM Verified"}</span>
+          <span className="recommendation-rating">
+            <i className="bi bi-star-fill" /> {product.rating || "4.8"}
+          </span>
+        </div>
+
+        <Link to={`/product/${product.slug || product._id}`} className="recommendation-name" title={product.name}>
+          {product.name}
+        </Link>
+
+        {reason && (
+          <div className="recommendation-reason-tag">
+            <i className="bi bi-stars" />
+            <span>{reason}</span>
+          </div>
+        )}
+
+        <div className="recommendation-footer-wrap">
+          <div className="recommendation-price-box">
+            <span className="recommendation-price">{fmt(getDisplayPrice(product))}</span>
+            <span className="recommendation-sku">{product.sku || (product._id ? `SKU: IM-${String(product._id).slice(-4).toUpperCase()}` : "")}</span>
+          </div>
+
+          <div className="recommendation-action-row">
+            <button
+              type="button"
+              className={`btn btn-sm ${added ? "btn-success" : "btn-primary"} btn-rec-cart`}
+              onClick={addToCart}
+              title="Add to procurement cart"
+            >
+              <i className={`bi ${added ? "bi-check2" : "bi-cart-plus"}`} />
+              <span>{added ? "Added" : "Cart"}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`btn-rec-compare ${isCompared ? "active" : ""}`}
+              onClick={handleToggleCompare}
+              title={isCompared ? "Remove from compare" : "Add to compare"}
+            >
+              <i className="bi bi-arrow-left-right" />
+              <span>{isCompared ? "Comparing" : "Compare"}</span>
+            </button>
+
+            <Link
+              to={`/product/${product.slug || product._id}`}
+              className="btn-rec-view"
+              title="View full specifications"
+              aria-label="View specifications"
+            >
+              <i className="bi bi-arrow-up-right" />
+            </Link>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
 }
 const BENCHMARK_PRESETS = [
   {
@@ -1674,6 +2853,28 @@ function Compare() {
   const [diffsOnly, setDiffsOnly] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerApiProducts, setPickerApiProducts] = useState([]);
+  const [loadingPicker, setLoadingPicker] = useState(false);
+
+  useEffect(() => {
+    if (!showAddModal) return;
+    setLoadingPicker(true);
+    const cat = state.data?.results?.[0]?.product?.category;
+    const p = { limit: 50 };
+    if (cat) p.category = cat;
+    api
+      .get("/products", { params: p })
+      .then((r) => {
+        setPickerApiProducts(Array.isArray(r.data?.data?.items) ? r.data.data.items : []);
+      })
+      .catch(() => {
+        setPickerApiProducts([]);
+      })
+      .finally(() => {
+        setLoadingPicker(false);
+      });
+  }, [showAddModal, state.data]);
+
   const [copied, setCopied] = useState(false);
   const [cartAdded, setCartAdded] = useState({});
   const [savedWishlist, setSavedWishlist] = useState({});
@@ -1974,17 +3175,26 @@ function Compare() {
   // Available items for the quick picker modal
   const availablePickerProducts = useMemo(() => {
     const currentIds = ids.split(",").filter(Boolean);
-    return INDUSTRIAL_CATALOG.filter((p) => {
-      if (currentIds.includes(p._id)) return false;
+    const combined = [...pickerApiProducts];
+    if (typeof INDUSTRIAL_CATALOG !== "undefined" && Array.isArray(INDUSTRIAL_CATALOG)) {
+      INDUSTRIAL_CATALOG.forEach((item) => {
+        if (!combined.some((p) => String(p._id) === String(item._id) || p.name === item.name)) {
+          combined.push(item);
+        }
+      });
+    }
+    return combined.filter((p) => {
+      if (currentIds.includes(String(p._id))) return false;
       if (!pickerSearch.trim()) return true;
       const term = pickerSearch.toLowerCase();
       return (
-        p.name.toLowerCase().includes(term) ||
-        p.brand.toLowerCase().includes(term) ||
-        p.category.toLowerCase().includes(term)
+        (p.name && p.name.toLowerCase().includes(term)) ||
+        (p.brand && p.brand.toLowerCase().includes(term)) ||
+        (p.category && p.category.toLowerCase().includes(term)) ||
+        (p.model && p.model.toLowerCase().includes(term))
       );
     });
-  }, [ids, pickerSearch]);
+  }, [ids, pickerSearch, pickerApiProducts]);
 
   // Empty state catalog list
   const emptyCatalogItems = useMemo(() => {
@@ -2677,11 +3887,16 @@ function Compare() {
               />
             </div>
             <div className="compare-modal-list">
-              {availablePickerProducts.length > 0 ? (
+              {loadingPicker ? (
+                <div className="text-center py-4 text-secondary">
+                  <div className="spinner-border spinner-border-sm me-2" />
+                  Loading available equipment...
+                </div>
+              ) : availablePickerProducts.length > 0 ? (
                 availablePickerProducts.map((p) => (
                   <div className="picker-product-item" key={p._id}>
                     <img
-                      src={p.image || "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80"}
+                      src={p.image || p.images?.[0]?.url || p.images?.[0] || "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80"}
                       alt=""
                     />
                     <div className="picker-product-info">
@@ -2730,7 +3945,12 @@ function AuthPage({ register = false }) {
       }
       login(r.data.data);
       const role = r.data.data.user.role;
-      nav(role === "admin" ? "/admin" : role === "vendor" ? "/vendor" : "/dashboard/buyer");
+      const redirect = searchParams.get("redirect");
+      if (redirect && redirect.startsWith("/")) {
+        nav(redirect);
+      } else {
+        nav(role === "admin" ? "/admin" : role === "vendor" ? "/vendor" : "/dashboard/buyer");
+      }
     } catch (e) {
       setState({ loading: false, error: e.response?.data?.message || "Unable to connect to the server.", message: "" });
     }
@@ -3264,12 +4484,13 @@ function Dashboard() {
         "orders",
       ]
       : user.role === "vendor"
-        ? ["products", "offers", "pairings"]
+        ? ["products", "offers", "pairings", "orders"]
         : ["wishlist", "comparisons", "reviews"];
   const quickLinks =
     user.role === "vendor"
       ? [
         { label: "Vendor workspace", to: "/vendor/products", icon: "bi-shop", description: "Manage listings, offers, and pairings" },
+        { label: "Orders", to: "/account", icon: "bi-box-seam", description: "View and fulfil incoming buyer orders" },
         { label: "Account", to: "/account", icon: "bi-person-gear", description: "Update profile, security, and payout details" },
       ]
       : user.role === "buyer"
@@ -3296,6 +4517,7 @@ function Dashboard() {
     products: "/vendor/products",
     offers: "/vendor/offers",
     pairings: "/vendor/pairing",
+    orders: "/account",
   };
   return (
     <main className={`container py-5 dashboard-page ${user.role}-dashboard`}>
@@ -3750,7 +4972,7 @@ function Wishlist() {
       ) : (
         <div className="row g-4">
           {state.items.map((p) => (
-            <div className="col-md-4" key={p._id}>
+            <div className="col-6 col-md-4 col-xl-3" key={p._id}>
               <ProductCard product={p} onRemove={remove} />
             </div>
           ))}
@@ -4033,44 +5255,311 @@ function PairExistingProduct() {
   );
 }
 function CartPage() {
-  const { user } = useAuth();
+  const { user, login, logout } = useAuth();
+  const nav = useNavigate();
   const [items, setItems] = useState(() => JSON.parse(localStorage.getItem("cart") || "[]"));
   const [message, setMessage] = useState("");
   const [checkingOut, setCheckingOut] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authForm, setAuthForm] = useState({ email: "", password: "" });
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
   const updateQuantity = (id, quantity) => {
-    const next = items.map((item) => item._id === id ? { ...item, quantity: Math.max(1, quantity) } : item);
+    const next = items.map((item) => (item._id === id ? { ...item, quantity: Math.max(1, quantity) } : item));
     setItems(next);
     localStorage.setItem("cart", JSON.stringify(next));
+    notifyCartChanged();
   };
+
   const remove = (id) => {
     const next = items.filter((item) => item._id !== id);
     setItems(next);
     localStorage.setItem("cart", JSON.stringify(next));
+    notifyCartChanged();
   };
+
   const total = items.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0);
-  const checkout = async () => {
-    if (user?.role !== "buyer") {
-      setMessage("Please sign in with a buyer account to place an order.");
+
+  const placeOrder = async (targetUser) => {
+    const buyer = targetUser || user;
+    if (!buyer || buyer.role !== "buyer") {
+      setShowAuthModal(true);
       return;
     }
     setCheckingOut(true);
     try {
       const payload = items.map((item) => ({
         product: item._id || item.product,
+        slug: item.slug || item._id,
+        sku: item.sku,
+        name: item.name,
         quantity: Math.max(1, parseInt(item.quantity, 10) || 1),
       }));
       const response = await api.post("/orders", { items: payload });
-      const numbers = response.data.data.orders.map((order) => order.orderNumber).join(", ");
+      const numbers = (response.data?.data?.orders || []).map((order) => order.orderNumber).join(", ");
       localStorage.removeItem("cart");
       setItems([]);
-      setMessage(`Order placed successfully: ${numbers}`);
+      notifyCartChanged();
+      setMessage(`Order placed successfully${numbers ? `: ${numbers}` : "! Direct OEM allocation confirmed."}`);
+      setShowAuthModal(false);
     } catch (e) {
       setMessage(e.response?.data?.message || e.message || "Unable to place order.");
     } finally {
       setCheckingOut(false);
     }
   };
-  return <main className="container py-5 shopping-page"><span className="eyebrow dark">ENTERPRISE PROCUREMENT CART</span><h1>Industrial Order Review</h1><p className="text-secondary">Review your machinery allocation and direct OEM shipment lines before order dispatch.</p>{message && <div className="alert alert-info mt-3">{message}</div>}{!items.length ? <div className="empty-state"><i className="bi bi-box-seam" /><h2>Your procurement cart is empty</h2><p>Select industrial equipment, motors, or CNC centers from the catalog to prepare your purchase order.</p><Link to="/products" className="btn btn-primary">Explore Machinery Catalog <i className="bi bi-arrow-right ms-2" /></Link></div> : <div className="row g-4 mt-2"><div className="col-lg-8"><div className="dashboard-panel cart-list">{items.map((item) => <div className="cart-item" key={item._id}><div className="cart-thumb">{item.image ? <img src={item.image} alt="" /> : <i className="bi bi-box-seam" />}</div><div className="cart-info"><strong>{item.name}</strong><span>{item.brand || "OEM Verified"}</span><b>{fmt(item.price)}</b></div><div className="quantity-control"><button onClick={() => updateQuantity(item._id, (item.quantity || 1) - 1)} aria-label="Decrease quantity">−</button><span>{item.quantity || 1}</span><button onClick={() => updateQuantity(item._id, (item.quantity || 1) + 1)} aria-label="Increase quantity">+</button></div><button className="remove-item" onClick={() => remove(item._id)}>Remove</button></div>)}</div></div><aside className="col-lg-4"><div className="offer-panel cart-summary"><span className="eyebrow dark">ORDER SUMMARY</span><div><span>Subtotal (excl. taxes)</span><strong>{fmt(total)}</strong></div><div><span>Pan-India Freight</span><strong className="text-success">Covered</strong></div><hr /><div className="total-row"><span>Estimated Total</span><strong>{fmt(total)}</strong></div><button className="btn btn-primary w-100 mt-3" disabled={checkingOut} onClick={checkout}>{checkingOut ? "Submitting purchase order…" : "Submit Procurement Order"} <i className="bi bi-arrow-right ms-2" /></button></div></aside></div>}</main>;
+
+  const checkout = async () => {
+    if (!user || user.role !== "buyer") {
+      setShowAuthModal(true);
+      return;
+    }
+    await placeOrder(user);
+  };
+
+  const handleModalLogin = async (e) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const r = await api.post("/auth/login", authForm);
+      const loggedInUser = r.data?.data?.user;
+      if (loggedInUser?.role !== "buyer") {
+        setAuthError(`This account is registered as '${loggedInUser?.role || "user"}'. Direct procurement orders require a buyer account.`);
+        setAuthLoading(false);
+        return;
+      }
+      login(r.data.data);
+      setShowAuthModal(false);
+      await placeOrder(loggedInUser);
+    } catch (err) {
+      setAuthError(err.response?.data?.message || "Invalid credentials. Please verify your email and password.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  return (
+    <main className="container py-5 shopping-page">
+      <span className="eyebrow dark">ENTERPRISE PROCUREMENT CART</span>
+      <h1>Industrial Order Review</h1>
+      <p className="text-secondary">Review your machinery allocation and direct OEM shipment lines before order dispatch.</p>
+      {message && <div className="alert alert-info mt-3">{message}</div>}
+      {!items.length ? (
+        <div className="empty-state">
+          <i className="bi bi-box-seam" />
+          <h2>Your procurement cart is empty</h2>
+          <p>Select industrial equipment, motors, or CNC centers from the catalog to prepare your purchase order.</p>
+          <Link to="/products" className="btn btn-primary">
+            Explore Machinery Catalog <i className="bi bi-arrow-right ms-2" />
+          </Link>
+        </div>
+      ) : (
+        <div className="row g-4 mt-2">
+          <div className="col-lg-8">
+            <div className="dashboard-panel cart-list">
+              {items.map((item) => (
+                <div className="cart-item" key={item._id}>
+                  <div className="cart-thumb">{item.image ? <img src={item.image} alt="" /> : <i className="bi bi-box-seam" />}</div>
+                  <div className="cart-info">
+                    <strong>{item.name}</strong>
+                    <span>{item.brand || "OEM Verified"}</span>
+                    <b>{fmt(item.price)}</b>
+                  </div>
+                  <div className="quantity-control">
+                    <button onClick={() => updateQuantity(item._id, (item.quantity || 1) - 1)} aria-label="Decrease quantity">
+                      −
+                    </button>
+                    <span>{item.quantity || 1}</span>
+                    <button onClick={() => updateQuantity(item._id, (item.quantity || 1) + 1)} aria-label="Increase quantity">
+                      +
+                    </button>
+                  </div>
+                  <button className="remove-item" onClick={() => remove(item._id)}>
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <aside className="col-lg-4">
+            <div className="offer-panel cart-summary">
+              <span className="eyebrow dark">ORDER SUMMARY</span>
+              <div>
+                <span>Subtotal (excl. taxes)</span>
+                <strong>{fmt(total)}</strong>
+              </div>
+              <div>
+                <span>Pan-India Freight</span>
+                <strong className="text-success">Covered</strong>
+              </div>
+              <hr />
+              <div className="total-row">
+                <span>Estimated Total</span>
+                <strong>{fmt(total)}</strong>
+              </div>
+              <button className="btn btn-primary w-100 mt-3" disabled={checkingOut} onClick={checkout}>
+                {checkingOut ? "Submitting purchase order…" : "Submit Procurement Order"} <i className="bi bi-arrow-right ms-2" />
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {/* Sign-In Popup Modal for unauthenticated / non-buyer users */}
+      {showAuthModal && (
+        <div
+          className="compare-modal-backdrop"
+          style={{ zIndex: 2200 }}
+          onClick={() => setShowAuthModal(false)}
+        >
+          <div
+            className="compare-modal-content cart-auth-modal"
+            style={{ maxWidth: 480 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="compare-modal-header border-bottom">
+              <div>
+                <span className="eyebrow dark">AUTHENTICATION REQUIRED</span>
+                <h3 className="h5 mb-0 d-flex align-items-center gap-2">
+                  <i className="bi bi-shield-lock text-primary" /> Sign In to Place Order
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="btn-modal-close"
+                onClick={() => setShowAuthModal(false)}
+                aria-label="Close"
+              >
+                <i className="bi bi-x-lg" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              {user && user.role !== "buyer" ? (
+                <div className="text-center py-2">
+                  <div className="alert alert-warning mb-4">
+                    <i className="bi bi-exclamation-triangle-fill me-2" />
+                    You are signed in as <strong>{user.role}</strong> ({user.email}). Placing direct procurement orders requires a verified <strong>Buyer</strong> profile.
+                  </div>
+                  <button
+                    className="btn btn-primary w-100 mb-2"
+                    onClick={() => {
+                      logout();
+                      setAuthError("");
+                    }}
+                  >
+                    <i className="bi bi-box-arrow-right me-1" /> Switch to Buyer Account
+                  </button>
+                  <button
+                    className="btn btn-outline-secondary w-100"
+                    onClick={() => setShowAuthModal(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-secondary small mb-3">
+                    Sign in to your buyer procurement account to confirm equipment allocation, escrow protection, and dispatch terms.
+                  </p>
+
+                  {authError && (
+                    <div className="alert alert-danger py-2 small mb-3">
+                      <i className="bi bi-exclamation-circle me-1" /> {authError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleModalLogin}>
+                    <div className="mb-3">
+                      <label className="form-label small fw-semibold text-secondary mb-1">Work Email</label>
+                      <input
+                        type="email"
+                        required
+                        className="form-control"
+                        placeholder="buyer@company.com"
+                        value={authForm.email}
+                        onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="mb-3">
+                      <div className="d-flex justify-content-between">
+                        <label className="form-label small fw-semibold text-secondary mb-1">Password</label>
+                        <button
+                          type="button"
+                          className="btn btn-link p-0 text-decoration-none small text-secondary"
+                          onClick={() => setShowPassword(!showPassword)}
+                        >
+                          {showPassword ? "Hide" : "Show"}
+                        </button>
+                      </div>
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        required
+                        className="form-control"
+                        placeholder="••••••••"
+                        value={authForm.password}
+                        onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="btn btn-primary w-100 mb-2"
+                      disabled={authLoading}
+                    >
+                      {authLoading ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm me-2" />
+                          Authenticating &amp; Placing Order…
+                        </>
+                      ) : (
+                        <>
+                          <i className="bi bi-check2-circle me-1" /> Sign In &amp; Place Order
+                        </>
+                      )}
+                    </button>
+
+                    <div className="d-flex align-items-center my-3">
+                      <hr className="flex-grow-1 m-0 text-secondary" />
+                      <span className="px-2 text-secondary small">or</span>
+                      <hr className="flex-grow-1 m-0 text-secondary" />
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary w-100 mb-3"
+                      onClick={() => {
+                        setShowAuthModal(false);
+                        nav("/login?redirect=/cart");
+                      }}
+                    >
+                      Go to Sign In Page <i className="bi bi-arrow-right ms-1" />
+                    </button>
+
+                    <div className="text-center small text-secondary">
+                      Don’t have a buyer account?{" "}
+                      <Link
+                        to="/register?role=buyer&redirect=/cart"
+                        className="text-primary text-decoration-none fw-semibold"
+                        onClick={() => setShowAuthModal(false)}
+                      >
+                        Register as Buyer
+                      </Link>
+                    </div>
+                  </form>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
 }
 function VendorTools({ mode }) {
   const [state, setState] = useState({
@@ -4345,14 +5834,18 @@ function ProductSubmission() {
       model: "",
       category: "Motors",
       description: "",
-      specifications: "{}",
-      technicalSpecifications: "{}",
       oemManualTitle: "",
       oemManualUrl: "",
       price: "",
       stock: "",
     }),
+    [specPairs, setSpecPairs] = useState([{ name: "", value: "" }]),
+    [techPairs, setTechPairs] = useState([{ name: "", value: "" }]),
     [images, setImages] = useState([]);
+  const pairsToObj = (pairs) => Object.fromEntries(pairs.filter(p => p.name.trim()).map(p => [p.name.trim(), p.value.trim()]));
+  const addPair = (setter) => setter(a => [...a, { name: "", value: "" }]);
+  const removePair = (setter, idx) => setter(a => a.filter((_, i) => i !== idx));
+  const updatePair = (setter, idx, field, val) => setter(a => a.map((p, i) => i === idx ? { ...p, [field]: val } : p));
   const load = () =>
     api
       .get("/vendor/products")
@@ -4393,7 +5886,9 @@ function ProductSubmission() {
     e.preventDefault();
     try {
       const data = new FormData();
-      Object.entries({ ...form, saveAsDraft: String(draft) }).forEach(
+      const specifications = JSON.stringify(pairsToObj(specPairs));
+      const technicalSpecifications = JSON.stringify(pairsToObj(techPairs));
+      Object.entries({ ...form, specifications, technicalSpecifications, saveAsDraft: String(draft) }).forEach(
         ([k, v]) => data.append(k, v),
       );
       images.forEach((f) => data.append("images", f));
@@ -4403,17 +5898,14 @@ function ProductSubmission() {
         message: draft ? "Draft saved." : "Product submitted for review.",
         error: "",
       }));
+      setSpecPairs([{ name: "", value: "" }]);
+      setTechPairs([{ name: "", value: "" }]);
       setImages([]);
       load();
     } catch (e) {
       setState((s) => ({
         ...s,
-        error:
-          e instanceof SyntaxError
-            ? 'Specifications must be valid JSON, e.g. {"RAM":"16GB"}'
-            : e.response?.data?.message ||
-            e.message ||
-            "Unable to submit product.",
+        error: e.response?.data?.message || e.message || "Unable to submit product.",
       }));
     }
   };
@@ -4503,22 +5995,56 @@ function ProductSubmission() {
                 setForm({ ...form, description: e.target.value })
               }
             />
-            <label className="form-label fw-bold">Product specifications</label>
-            <textarea
-              className="form-control mb-2"
-              rows="4"
-              placeholder={'{"Voltage":"415V","Power":"7.5 kW","IP rating":"IP54"}'}
-              value={form.specifications}
-              onChange={(e) => setForm({ ...form, specifications: e.target.value })}
-            />
-            <label className="form-label fw-bold">Technical specifications</label>
-            <textarea
-              className="form-control mb-2"
-              rows="4"
-              placeholder={'{"Operating temperature":"-20 to 60 C","Standards":"IEC 60947"}'}
-              value={form.technicalSpecifications}
-              onChange={(e) => setForm({ ...form, technicalSpecifications: e.target.value })}
-            />
+            <label className="form-label fw-bold">Product specifications <span className="text-secondary fw-normal">(optional)</span></label>
+            {specPairs.map((pair, idx) => (
+              <div className="d-flex gap-2 mb-2" key={idx}>
+                <input
+                  className="form-control"
+                  placeholder="Name (e.g. Voltage)"
+                  value={pair.name}
+                  onChange={(e) => updatePair(setSpecPairs, idx, "name", e.target.value)}
+                />
+                <input
+                  className="form-control"
+                  placeholder="Value (e.g. 415V)"
+                  value={pair.value}
+                  onChange={(e) => updatePair(setSpecPairs, idx, "value", e.target.value)}
+                />
+                {specPairs.length > 1 && (
+                  <button type="button" className="btn btn-outline-danger btn-sm px-2" onClick={() => removePair(setSpecPairs, idx)} title="Remove">
+                    <i className="bi bi-trash" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button type="button" className="btn btn-outline-secondary btn-sm mb-3" onClick={() => addPair(setSpecPairs)}>
+              <i className="bi bi-plus-lg me-1" />Add specification
+            </button>
+            <label className="form-label fw-bold d-block mt-3">Technical specifications <span className="text-secondary fw-normal">(optional)</span></label>
+            {techPairs.map((pair, idx) => (
+              <div className="d-flex gap-2 mb-2" key={idx}>
+                <input
+                  className="form-control"
+                  placeholder="Name (e.g. Operating temp)"
+                  value={pair.name}
+                  onChange={(e) => updatePair(setTechPairs, idx, "name", e.target.value)}
+                />
+                <input
+                  className="form-control"
+                  placeholder="Value (e.g. -20 to 60 C)"
+                  value={pair.value}
+                  onChange={(e) => updatePair(setTechPairs, idx, "value", e.target.value)}
+                />
+                {techPairs.length > 1 && (
+                  <button type="button" className="btn btn-outline-danger btn-sm px-2" onClick={() => removePair(setTechPairs, idx)} title="Remove">
+                    <i className="bi bi-trash" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button type="button" className="btn btn-outline-secondary btn-sm mb-3" onClick={() => addPair(setTechPairs)}>
+              <i className="bi bi-plus-lg me-1" />Add technical spec
+            </button>
             <div className="row g-2 mb-2">
               <div className="col">
                 <input className="form-control" placeholder="OEM manual title" value={form.oemManualTitle} onChange={(e) => setForm({ ...form, oemManualTitle: e.target.value })} />
@@ -4765,7 +6291,7 @@ function App() {
         <Header />
         <CartDrawer />
         <CompareQueue />
-        <a className="whatsapp-float" href="https://wa.me/917677774700" target="_blank" rel="noreferrer" aria-label="Chat with us on WhatsApp"><i className="bi bi-whatsapp" /></a>
+        <a className="whatsapp-float" href="https://wa.me/917903553221" target="_blank" rel="noreferrer" aria-label="Chat with us on WhatsApp"><i className="bi bi-whatsapp" /></a>
         <RouteBoundary>
           <Routes>
             <Route path="/" element={<Home />} />
