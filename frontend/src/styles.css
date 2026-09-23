@@ -3162,8 +3162,18 @@ h1, h2, h3, h4, h5, h6 {
 .vendor-dashboard .metric-sparkline > div { background: var(--tertiary-mint); }
 
 .vendor-dashboard .dashboard-panel {
+  --on-surface-bright: #ffffff;
+  --on-surface: #f1f5f9;
+  --on-surface-muted: #94a3b8;
+  --on-surface-variant: #cbd5e1;
+  --border-glass: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.1);
   background: linear-gradient(145deg, rgba(30, 33, 39, 0.94), rgba(15, 17, 21, 0.94));
+  color: #f1f5f9;
+}
+
+.vendor-dashboard .dashboard-panel .text-secondary {
+  color: #94a3b8 !important;
 }
 
 .vendor-dashboard .dashboard-panel h3 {
@@ -3171,6 +3181,8 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   gap: 9px;
   font-size: 1.05rem;
+  color: #ffffff !important;
+  font-weight: 700;
 }
 
 .vendor-dashboard .dashboard-panel h3::before {
@@ -3191,20 +3203,32 @@ h1, h2, h3, h4, h5, h6 {
 
 .vendor-dashboard .admin-module-card:hover { border-color: var(--brand-orange); background: rgba(255, 77, 38, 0.06); }
 
+.offer-row,
 .vendor-dashboard .offer-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 13px 2px;
-  border-bottom: 1px solid var(--border-glass);
+  color: #f1f5f9;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.offer-row:last-child,
 .vendor-dashboard .offer-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.offer-row > span,
 .vendor-dashboard .offer-row > span { display: grid; gap: 3px; min-width: 0; }
-.vendor-dashboard .offer-row span b { overflow: hidden; color: var(--on-surface); font-size: 0.84rem; text-overflow: ellipsis; white-space: nowrap; }
-.vendor-dashboard .offer-row small { color: var(--on-surface-muted); font-family: var(--font-mono); font-size: 0.66rem; }
-.vendor-dashboard .offer-row > b { flex: 0 0 auto; color: var(--tertiary-mint); font-family: var(--font-headline); font-size: 0.82rem; }
+.offer-row span b,
+.offer-row span strong,
+.vendor-dashboard .offer-row span b,
+.vendor-dashboard .offer-row span strong { overflow: hidden; color: #f8fafc !important; font-size: 0.88rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.offer-row small,
+.offer-row span small,
+.vendor-dashboard .offer-row small,
+.vendor-dashboard .offer-row span small { color: #94a3b8 !important; font-family: var(--font-mono); font-size: 0.72rem; }
+.offer-row > b,
+.vendor-dashboard .offer-row > b { flex: 0 0 auto; color: #10b981 !important; font-family: var(--font-headline); font-size: 0.85rem; font-weight: 700; }
+
 
 .admin-module-grid {
   display: grid;

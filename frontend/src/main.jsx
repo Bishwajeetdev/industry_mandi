@@ -3367,7 +3367,7 @@ function Dashboard() {
         </div>
 
         <div className="dashboard-panel mt-4">
-          <h3>Quick access</h3>
+          <h3 className="text-white">Quick access</h3>
           <div className="row g-3 mt-1">
             {quickLinks.map((link) => (
               <div className="col-md-6" key={link.label}>
@@ -3395,17 +3395,17 @@ function Dashboard() {
         <div className="row g-4 mt-2">
           <div className="col-lg-6">
             <div className="dashboard-panel">
-              <h3>{user.role === "vendor" ? "Your listings" : "Latest product records"}</h3>
+              <h3 className="text-white">{user.role === "vendor" ? "Your listings" : "Latest product records"}</h3>
               {details.products.length ? (
                 details.products.slice(0, 6).map((p) => (
                   <div className="offer-row" key={p._id}>
                     <span>
-                      <b>{p.name}</b>
-                      <small className="text-capitalize">
+                      <b className="text-white">{p.name}</b>
+                      <small className="text-secondary text-capitalize">
                         {p.status ? p.status.replace("_", " ") : "active"}
                       </small>
                     </span>
-                    <b>{p.price ? fmt(p.price) : p.category || "—"}</b>
+                    <b className="text-success">{p.price ? fmt(p.price) : p.category || "—"}</b>
                   </div>
                 ))
               ) : (
@@ -3416,17 +3416,17 @@ function Dashboard() {
 
           <div className="col-lg-6">
             <div className="dashboard-panel">
-              <h3>{user.role === "vendor" ? "Your pairing requests" : "Latest pairing activity"}</h3>
+              <h3 className="text-white">{user.role === "vendor" ? "Your pairing requests" : "Latest pairing activity"}</h3>
               {details.pairings.length ? (
                 details.pairings.slice(0, 6).map((x) => (
                   <div className="offer-row" key={x._id}>
                     <span>
-                      <b>{x.product?.name || x.submittedName || "Pairing request"}</b>
-                      <small className="text-capitalize">
+                      <b className="text-white">{x.product?.name || x.submittedName || "Pairing request"}</b>
+                      <small className="text-secondary text-capitalize">
                         {x.status ? x.status.replace("_", " ") : "pending"}
                       </small>
                     </span>
-                    <b>{x.offer?.price ? fmt(x.offer.price) : "—"}</b>
+                    <b className="text-success">{x.offer?.price ? fmt(x.offer.price) : "—"}</b>
                   </div>
                 ))
               ) : (
@@ -3436,15 +3436,15 @@ function Dashboard() {
           </div>
           <div className="col-12">
             <div className="dashboard-panel">
-              <h3>{user.role === "vendor" ? "Orders to process" : "Recent orders"}</h3>
+              <h3 className="text-white">{user.role === "vendor" ? "Orders to process" : "Recent orders"}</h3>
               {details.orders.length ? (
                 details.orders.slice(0, 8).map((order) => (
                   <div className="offer-row" key={order._id}>
                     <span>
-                      <b>{order.orderNumber}</b>
-                      <small>{order.buyer?.name || "Buyer"} · {order.status}</small>
+                      <b className="text-white">{order.orderNumber}</b>
+                      <small className="text-secondary">{order.buyer?.name || "Buyer"} · {order.status}</small>
                     </span>
-                    <b>{fmt(order.total)}</b>
+                    <b className="text-success">{fmt(order.total)}</b>
                   </div>
                 ))
               ) : (
@@ -4306,7 +4306,7 @@ function VendorTools({ mode }) {
           {mode === "pairing" ? (
             <div className="dashboard-panel">
               <h3>Pairing review</h3>
-              <p>
+              <p className="text-secondary">
                 We detect potential catalog matches and an administrator must
                 approve the result before your offer can become public.
               </p>
@@ -4315,14 +4315,14 @@ function VendorTools({ mode }) {
             <Loading />
           ) : (
             <div className="dashboard-panel">
-              <h3>Submitted records</h3>
+              <h3 className="text-white">Submitted records</h3>
               {state.items.map((x) => (
                 <div className="offer-row" key={x._id}>
                   <span>
-                    {x.product?.name || x.name}
-                    <small>{x.status}</small>
+                    <b className="text-white">{x.product?.name || x.name}</b>
+                    <small className="text-secondary">{x.status}</small>
                   </span>
-                  <b>{x.price ? fmt(x.price) : x.category}</b>
+                  <b className="text-success">{x.price ? fmt(x.price) : x.category}</b>
                 </div>
               ))}
             </div>
