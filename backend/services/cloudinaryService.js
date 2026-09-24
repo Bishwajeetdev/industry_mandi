@@ -1,9 +1,16 @@
 import { v2 as cloudinary } from "cloudinary";
 
-const cloudinaryUrl = process.env.CLOUDINARY_URL;
+// Render values are sometimes pasted as `CLOUDINARY_URL=...` or with quotes.
+// Normalize those harmless wrappers, but never start with an invalid URL.
+const cloudinaryUrl = String(process.env.CLOUDINARY_URL || "")
+  .trim()
+  .replace(/^CLOUDINARY_URL\s*=\s*/i, "")
+  .replace(/^['"]|['"]$/g, "");
 
-if (cloudinaryUrl) {
+if (cloudinaryUrl.startsWith("cloudinary://")) {
   cloudinary.config({ cloudinary_url: cloudinaryUrl, secure: true });
+} else if (cloudinaryUrl) {
+  console.error("CLOUDINARY_URL is invalid. Product image uploads are disabled until it starts with cloudinary://");
 }
 
 const safeFolderPart = (value, fallback) =>
@@ -15,7 +22,7 @@ export const productImageFolder = ({ productId, vendorId, role }) =>
     : `techlens/products/${safeFolderPart(productId, "new")}`;
 
 export const uploadProductImage = (file, context) => {
-  if (!cloudinaryUrl) throw new Error("Image hosting is not configured. Please contact an administrator.");
+  if (!cloudinaryUrl.startsWith("cloudinary://")) throw new Error("Image hosting is not configured. Please contact an administrator.");
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
