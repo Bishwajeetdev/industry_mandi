@@ -1,3 +1,4 @@
+import "../config/env.js";
 import { v2 as cloudinary } from "cloudinary";
 
 // Render values are sometimes pasted as `CLOUDINARY_URL=...` or with quotes.
@@ -8,7 +9,11 @@ const cloudinaryUrl = String(process.env.CLOUDINARY_URL || "")
   .replace(/^['"]|['"]$/g, "");
 
 if (cloudinaryUrl.startsWith("cloudinary://")) {
-  cloudinary.config({ cloudinary_url: cloudinaryUrl, secure: true });
+  try {
+    cloudinary.config({ cloudinary_url: cloudinaryUrl, secure: true });
+  } catch (err) {
+    console.error("Failed to configure Cloudinary:", err.message);
+  }
 } else if (cloudinaryUrl) {
   console.error("CLOUDINARY_URL is invalid. Product image uploads are disabled until it starts with cloudinary://");
 }
