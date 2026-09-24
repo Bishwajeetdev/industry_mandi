@@ -121,6 +121,20 @@ app.use((err, req, res, next) => {
     });
   }
 
+  // Cloudinary and upstream image upload service errors
+  if (
+    err.message?.includes('Image hosting') ||
+    err.message?.includes('Cloudinary') ||
+    err.name === 'CloudinaryError' ||
+    err.http_code
+  ) {
+    return res.status(502).json({
+      success: false,
+      message: err.message || 'Image hosting service error. Please check Cloudinary configuration or try again.',
+      ...(isProd ? {} : { detail: err.message }),
+    });
+  }
+
   const status =
     err.name === 'ValidationError' ? 422
     : err.name === 'CastError' || err.name === 'MulterError' ? 400

@@ -6855,166 +6855,301 @@ function AdminProductCreate() {
       model: "",
       category: "Motors",
       description: "",
-      specifications: "{}",
-      technicalSpecifications: "{}",
       oemManualTitle: "",
       oemManualUrl: "",
       price: "",
       stock: "",
     }),
+    [specPairs, setSpecPairs] = useState([{ name: "", value: "" }]),
+    [techPairs, setTechPairs] = useState([{ name: "", value: "" }]),
     [images, setImages] = useState([]),
-    [state, setState] = useState({ error: "", saving: false });
+    [recentProducts, setRecentProducts] = useState([]),
+    [state, setState] = useState({ error: "", saving: false, message: "" });
+
+  const pairsToObj = (pairs) =>
+    Object.fromEntries(
+      pairs.filter((p) => p.name.trim()).map((p) => [p.name.trim(), p.value.trim()])
+    );
+  const addPair = (setter) => setter((a) => [...a, { name: "", value: "" }]);
+  const removePair = (setter, idx) => setter((a) => a.filter((_, i) => i !== idx));
+  const updatePair = (setter, idx, field, val) =>
+    setter((a) => a.map((p, i) => (i === idx ? { ...p, [field]: val } : p)));
+
+  const loadRecent = () =>
+    api
+      .get("/admin/resources/products")
+      .then((r) => setRecentProducts((r.data.data || []).slice(0, 8)))
+      .catch(() => {});
+
+  useEffect(loadRecent, []);
+
   const choose = (e) => {
-    const files = [...e.target.files].filter(
+    const valid = [...e.target.files].filter(
       (f) =>
         ["image/jpeg", "image/png", "image/webp"].includes(f.type) &&
         f.size <= 5 * 1024 * 1024,
     );
-    if (files.length !== e.target.files.length)
+    if (valid.length !== e.target.files.length)
       setState((s) => ({
         ...s,
-        error: "Use JPG, PNG, or WebP files up to 5 MB.",
+        error: "Images must be JPG, PNG, or WebP and no larger than 5 MB.",
       }));
-    setImages((a) => [...a, ...files].slice(0, 8));
+    setImages((a) => [...a, ...valid].slice(0, 8));
     e.target.value = "";
   };
+
+  const move = (i, d) =>
+    setImages((a) => {
+      const n = [...a], j = i + d;
+      if (j < 0 || j >= n.length) return n;
+      [n[i], n[j]] = [n[j], n[i]];
+      return n;
+    });
+
   const submit = async (e) => {
     e.preventDefault();
-    setState({ error: "", saving: true });
+    setState((s) => ({ ...s, error: "", message: "", saving: true }));
     try {
       const data = new FormData();
-      Object.entries(form).forEach(([key, value]) => data.append(key, value));
+      const specifications = JSON.stringify(pairsToObj(specPairs));
+      const technicalSpecifications = JSON.stringify(pairsToObj(techPairs));
+      Object.entries({ ...form, specifications, technicalSpecifications }).forEach(
+        ([k, v]) => data.append(k, v),
+      );
       data.append("primaryImageIndex", "0");
-      images.forEach((image) => data.append("images", image));
-      await api.post("/products", data);
-      nav("/admin/products");
-    } catch (e) {
+      images.forEach((img) => data.append("images", img));
+      const res = await api.post("/products", data);
+      setState({ error: "", saving: false, message: res.data.message || "Product created successfully." });
+      setForm({ name: "", brand: "", model: "", category: "Motors", description: "", oemManualTitle: "", oemManualUrl: "", price: "", stock: "" });
+      setSpecPairs([{ name: "", value: "" }]);
+      setTechPairs([{ name: "", value: "" }]);
+      setImages([]);
+      loadRecent();
+    } catch (err) {
       setState({
         saving: false,
-        error:
-          e.response?.data?.message ||
-          'Use valid JSON for specifications, e.g. {"RAM":"16GB"}.',
+        message: "",
+        error: err.response?.data?.message || "Failed to create product. Please try again.",
       });
     }
   };
-  const move = (index, direction) => setImages((current) => {
-    const next = [...current], target = index + direction;
-    if (target < 0 || target >= next.length) return current;
-    [next[index], next[target]] = [next[target], next[index]];
-    return next;
-  });
+
+  const CATEGORIES = ["Motors", "Space Heaters", "LED Lighting", "Testing Instruments", "MCBs", "Motor Starters", "Contactors", "Switchgear", "Industrial Sensors", "Cables"];
+
   return (
     <main className="container py-5">
-      <Link to="/admin" className="small text-decoration-none">
-        ← Dashboard
-      </Link>
-      <span className="eyebrow dark d-block mt-3">ADMIN CATALOG</span>
+      <div className="d-flex justify-content-between align-items-center gap-2 mb-3 flex-wrap">
+        <span className="eyebrow dark">ADMIN CATALOG</span>
+        <Link className="btn btn-outline-primary btn-sm" to="/admin">
+          <i className="bi bi-speedometer2 me-1" />Dashboard
+        </Link>
+      </div>
       <h1>Create product</h1>
-      <form className="dashboard-panel mt-4" onSubmit={submit}>
-        {state.error && <div className="alert alert-danger">{state.error}</div>}
-        <input
-          required
-          className="form-control mb-2"
-          placeholder="Product name"
-          value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
-        />
-        <div className="row g-2">
-          <div className="col">
+      <div className="row g-4">
+        <div className="col-lg-7">
+          <form className="dashboard-panel" onSubmit={submit}>
+            {state.error && <div className="alert alert-danger">{state.error}</div>}
+            {state.message && <div className="alert alert-success">{state.message}</div>}
+
+            {/* Basic info */}
             <input
               required
               className="form-control mb-2"
-              placeholder="Brand"
-              value={form.brand}
-              onChange={(e) => setForm({ ...form, brand: e.target.value })}
+              placeholder="Product name"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
-          </div>
-          <div className="col">
-            <input
+            <div className="row g-2">
+              <div className="col">
+                <input
+                  required
+                  className="form-control mb-2"
+                  placeholder="Brand"
+                  value={form.brand}
+                  onChange={(e) => setForm({ ...form, brand: e.target.value })}
+                />
+              </div>
+              <div className="col">
+                <input
+                  className="form-control mb-2"
+                  placeholder="Model"
+                  value={form.model}
+                  onChange={(e) => setForm({ ...form, model: e.target.value })}
+                />
+              </div>
+            </div>
+            <select
+              className="form-select mb-2"
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+            >
+              {CATEGORIES.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <div className="row g-2 mb-2">
+              <div className="col">
+                <input
+                  type="number"
+                  min="0"
+                  className="form-control"
+                  placeholder="Price (₹)"
+                  value={form.price}
+                  onChange={(e) => setForm({ ...form, price: e.target.value })}
+                />
+              </div>
+              <div className="col">
+                <input
+                  type="number"
+                  min="0"
+                  className="form-control"
+                  placeholder="Stock units"
+                  value={form.stock}
+                  onChange={(e) => setForm({ ...form, stock: e.target.value })}
+                />
+              </div>
+            </div>
+            <textarea
+              required
               className="form-control mb-2"
-              placeholder="Model"
-              value={form.model}
-              onChange={(e) => setForm({ ...form, model: e.target.value })}
+              placeholder="Description"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
+
+            {/* Spec key-value pairs */}
+            <label className="form-label fw-bold">Product specifications <span className="text-secondary fw-normal">(optional)</span></label>
+            {specPairs.map((pair, idx) => (
+              <div className="d-flex gap-2 mb-2" key={idx}>
+                <input
+                  className="form-control"
+                  placeholder="Name (e.g. Voltage)"
+                  value={pair.name}
+                  onChange={(e) => updatePair(setSpecPairs, idx, "name", e.target.value)}
+                />
+                <input
+                  className="form-control"
+                  placeholder="Value (e.g. 415V)"
+                  value={pair.value}
+                  onChange={(e) => updatePair(setSpecPairs, idx, "value", e.target.value)}
+                />
+                {specPairs.length > 1 && (
+                  <button type="button" className="btn btn-outline-danger btn-sm px-2" onClick={() => removePair(setSpecPairs, idx)} title="Remove">
+                    <i className="bi bi-trash" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button type="button" className="btn btn-outline-secondary btn-sm mb-3" onClick={() => addPair(setSpecPairs)}>
+              <i className="bi bi-plus-lg me-1" />Add specification
+            </button>
+
+            {/* Technical spec key-value pairs */}
+            <label className="form-label fw-bold d-block mt-2">Technical specifications <span className="text-secondary fw-normal">(optional)</span></label>
+            {techPairs.map((pair, idx) => (
+              <div className="d-flex gap-2 mb-2" key={idx}>
+                <input
+                  className="form-control"
+                  placeholder="Name (e.g. Operating temp)"
+                  value={pair.name}
+                  onChange={(e) => updatePair(setTechPairs, idx, "name", e.target.value)}
+                />
+                <input
+                  className="form-control"
+                  placeholder="Value (e.g. -20 to 60°C)"
+                  value={pair.value}
+                  onChange={(e) => updatePair(setTechPairs, idx, "value", e.target.value)}
+                />
+                {techPairs.length > 1 && (
+                  <button type="button" className="btn btn-outline-danger btn-sm px-2" onClick={() => removePair(setTechPairs, idx)} title="Remove">
+                    <i className="bi bi-trash" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button type="button" className="btn btn-outline-secondary btn-sm mb-3" onClick={() => addPair(setTechPairs)}>
+              <i className="bi bi-plus-lg me-1" />Add technical spec
+            </button>
+
+            {/* OEM manual */}
+            <div className="row g-2 mb-3">
+              <div className="col">
+                <input className="form-control" placeholder="OEM manual title" value={form.oemManualTitle} onChange={(e) => setForm({ ...form, oemManualTitle: e.target.value })} />
+              </div>
+              <div className="col">
+                <input type="url" className="form-control" placeholder="OEM manual URL" value={form.oemManualUrl} onChange={(e) => setForm({ ...form, oemManualUrl: e.target.value })} />
+              </div>
+            </div>
+
+            {/* Images */}
+            <label className="form-label fw-bold">Product images</label>
+            <input
+              className="form-control mb-1"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              onChange={choose}
+            />
+            <small className="text-secondary d-block mb-2">
+              Up to 8 JPG, PNG, or WebP images, 5 MB each. First image is primary.
+            </small>
+            {images.length > 0 && (
+              <div className="image-previews mb-3">
+                {images.map((f, i) => (
+                  <div className="image-preview" key={`${f.name}-${i}`}>
+                    <img src={URL.createObjectURL(f)} alt="Product preview" />
+                    {i === 0 && <span>Primary</span>}
+                    <div>
+                      <button type="button" onClick={() => move(i, -1)} disabled={!i}>←</button>
+                      <button type="button" onClick={() => move(i, 1)} disabled={i === images.length - 1}>→</button>
+                      <button type="button" onClick={() => setImages((a) => a.filter((_, x) => x !== i))}>×</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button className="btn btn-primary w-100" disabled={state.saving}>
+              {state.saving ? <><span className="spinner-border spinner-border-sm me-2" role="status" />Creating…</> : "Create approved product"}
+            </button>
+          </form>
+        </div>
+
+        {/* Right panel: recently created products */}
+        <div className="col-lg-5">
+          <div className="dashboard-panel">
+            <h3 className="text-white mb-3">Recently created</h3>
+            {recentProducts.length === 0 ? (
+              <p className="text-secondary mb-0">No products created yet.</p>
+            ) : (
+              recentProducts.map((p) => (
+                <div className="offer-row" key={p._id}>
+                  <span>
+                    <b className="text-white">{p.name}</b>
+                    <small className="text-secondary ms-2">{p.brand}</small>
+                    <small className="text-capitalize d-block" style={{ color: p.status === "approved" || p.status === "published" ? "var(--color-mint, #4ade80)" : p.status === "pending" ? "#fbbf24" : "#94a3b8" }}>
+                      {p.status.replace(/_/g, " ")}
+                    </small>
+                  </span>
+                  <span className="d-flex flex-column align-items-end gap-1">
+                    <b className="text-success">{p.price ? fmt(p.price) : p.category}</b>
+                    {p.images?.length > 0 && <small className="text-secondary"><i className="bi bi-image me-1" />{p.images.length} img</small>}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="dashboard-panel mt-3">
+            <h3 className="text-white mb-2">Quick actions</h3>
+            <div className="d-flex flex-column gap-2">
+              <Link to="/admin/products" className="btn btn-outline-primary btn-sm">
+                <i className="bi bi-box-seam me-2" />View all products
+              </Link>
+              <Link to="/admin/products?status=pending" className="btn btn-outline-warning btn-sm">
+                <i className="bi bi-inbox me-2" />Review pending approvals
+              </Link>
+            </div>
           </div>
         </div>
-        <select
-          className="form-select mb-2"
-          value={form.category}
-          onChange={(e) => setForm({ ...form, category: e.target.value })}
-        >
-          {["Motors", "Space Heaters", "LED Lighting", "Testing Instruments", "MCBs", "Motor Starters", "Contactors", "Switchgear", "Industrial Sensors", "Cables"].map(
-            (x) => (
-              <option key={x}>{x}</option>
-            ),
-          )}
-        </select>
-        <textarea
-          required
-          className="form-control mb-2"
-          placeholder="Description"
-          value={form.description}
-          onChange={(e) => setForm({ ...form, description: e.target.value })}
-        />
-        <label className="form-label fw-bold">Product specifications</label>
-        <textarea
-          className="form-control mb-2"
-          rows="4"
-          placeholder={'{"Voltage":"415V","Power":"7.5 kW","IP rating":"IP54"}'}
-          value={form.specifications}
-          onChange={(e) => setForm({ ...form, specifications: e.target.value })}
-        />
-        <label className="form-label fw-bold">Technical specifications</label>
-        <textarea
-          className="form-control mb-2"
-          rows="4"
-          placeholder={'{"Operating temperature":"-20 to 60 C","Standards":"IEC 60947"}'}
-          value={form.technicalSpecifications}
-          onChange={(e) => setForm({ ...form, technicalSpecifications: e.target.value })}
-        />
-        <div className="row g-2 mb-2">
-          <div className="col">
-            <input className="form-control" placeholder="OEM manual title" value={form.oemManualTitle} onChange={(e) => setForm({ ...form, oemManualTitle: e.target.value })} />
-          </div>
-          <div className="col">
-            <input type="url" className="form-control" placeholder="OEM manual URL" value={form.oemManualUrl} onChange={(e) => setForm({ ...form, oemManualUrl: e.target.value })} />
-          </div>
-        </div>
-        <div className="row g-2">
-          <div className="col">
-            <input
-              type="number"
-              min="0"
-              className="form-control mb-2"
-              placeholder="Price"
-              value={form.price}
-              onChange={(e) => setForm({ ...form, price: e.target.value })}
-            />
-          </div>
-          <div className="col">
-            <input
-              type="number"
-              min="0"
-              className="form-control mb-2"
-              placeholder="Stock units"
-              value={form.stock}
-              onChange={(e) => setForm({ ...form, stock: e.target.value })}
-            />
-          </div>
-        </div>
-        <label className="form-label">Images</label>
-        <input
-          className="form-control mb-2"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          multiple
-          onChange={choose}
-        />
-        {images.length > 0 && <><small className="d-block text-secondary mb-2">{images.length} image{images.length === 1 ? "" : "s"} selected. Use the star to set the primary image.</small><div className="image-previews mb-3">{images.map((file, index) => <div className="image-preview" key={`${file.name}-${index}`}><img src={URL.createObjectURL(file)} alt="Product preview" />{index === 0 && <span>Primary</span>}<div><button type="button" disabled={!index} onClick={() => move(index, -1)}>←</button><button type="button" disabled={index === images.length - 1} onClick={() => move(index, 1)}>→</button><button type="button" onClick={() => setImages((current) => [current[index], ...current.filter((_, itemIndex) => itemIndex !== index)])}>★</button><button type="button" onClick={() => setImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div></div>)}</div></>}
-        <button className="btn btn-primary" disabled={state.saving}>
-          {state.saving ? "Creating…" : "Create approved product"}
-        </button>
-      </form>
+      </div>
     </main>
   );
 }
