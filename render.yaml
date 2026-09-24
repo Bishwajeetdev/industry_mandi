@@ -30,6 +30,12 @@ services:
           property: host
       - key: CLOUDINARY_URL
         sync: false # Set the Cloudinary URL securely in the Render dashboard
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
 
   # -------------------------------------------------------------
   # TechLens Frontend Static Site

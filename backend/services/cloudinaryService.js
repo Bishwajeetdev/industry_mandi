@@ -1,49 +1,59 @@
 import "../config/env.js";
 import { v2 as cloudinary } from "cloudinary";
 
-// Render values are sometimes pasted as `CLOUDINARY_URL=...` or with quotes.
-// Normalize those harmless wrappers, but never start with an invalid URL.
-const cloudinaryUrl = String(process.env.CLOUDINARY_URL || "")
-  .trim()
-  .replace(/^CLOUDINARY_URL\s*=\s*/i, "")
-  .replace(/^['"]|['"]$/g, "");
-
-const hasDiscreteConfig = Boolean(
-  process.env.CLOUDINARY_CLOUD_NAME &&
-  process.env.CLOUDINARY_API_KEY &&
-  process.env.CLOUDINARY_API_SECRET
-);
-
-if (cloudinaryUrl.startsWith("cloudinary://")) {
-  try {
-    cloudinary.config({ cloudinary_url: cloudinaryUrl, secure: true });
-  } catch (err) {
-    console.error("Failed to configure Cloudinary with URL:", err.message);
+export const getCleanCloudinaryUrl = () => {
+  let val = String(process.env.CLOUDINARY_URL || "").trim();
+  if (!val) return "";
+  val = val.replace(/^CLOUDINARY_URL\s*=\s*/i, "").trim();
+  val = val.replace(/^['"]|['"]$/g, "").trim();
+  if (val.startsWith("cloudinary:/") && !val.startsWith("cloudinary://")) {
+    val = val.replace(/^cloudinary:\/+/i, "cloudinary://");
+  } else if (!val.startsWith("cloudinary://") && val.includes("@") && val.includes(":")) {
+    val = `cloudinary://${val}`;
   }
-} else if (hasDiscreteConfig) {
-  try {
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
-      secure: true,
-    });
-  } catch (err) {
-    console.error("Failed to configure Cloudinary with discrete credentials:", err.message);
+  return val;
+};
+
+const hasDiscreteConfig = () =>
+  Boolean(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET
+  );
+
+export const configureCloudinary = () => {
+  const url = getCleanCloudinaryUrl();
+  if (url.startsWith("cloudinary://")) {
+    try {
+      cloudinary.config({ cloudinary_url: url, secure: true });
+      return true;
+    } catch (err) {
+      console.error("Failed to configure Cloudinary with URL:", err.message);
+      return false;
+    }
+  } else if (hasDiscreteConfig()) {
+    try {
+      cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME.trim(),
+        api_key: process.env.CLOUDINARY_API_KEY.trim(),
+        api_secret: process.env.CLOUDINARY_API_SECRET.trim(),
+        secure: true,
+      });
+      return true;
+    } catch (err) {
+      console.error("Failed to configure Cloudinary with discrete credentials:", err.message);
+      return false;
+    }
   }
-} else if (cloudinaryUrl) {
-  console.error("CLOUDINARY_URL is invalid. Product image uploads are disabled until it starts with cloudinary://");
-}
+  return false;
+};
+
+// Initial configuration attempt on module load
+configureCloudinary();
 
 export const isCloudinaryConfigured = () => {
-  return (
-    String(process.env.CLOUDINARY_URL || "").trim().startsWith("cloudinary://") ||
-    Boolean(
-      process.env.CLOUDINARY_CLOUD_NAME &&
-      process.env.CLOUDINARY_API_KEY &&
-      process.env.CLOUDINARY_API_SECRET
-    )
-  );
+  const url = getCleanCloudinaryUrl();
+  return url.startsWith("cloudinary://") || hasDiscreteConfig();
 };
 
 const safeFolderPart = (value, fallback) =>
@@ -55,7 +65,11 @@ export const productImageFolder = ({ productId, vendorId, role }) =>
     : `techlens/products/${safeFolderPart(productId, "new")}`;
 
 export const uploadProductImage = (file, context) => {
-  if (!isCloudinaryConfigured()) throw new Error("Image hosting is not configured. Please contact an administrator.");
+  if (!isCloudinaryConfigured() || !configureCloudinary()) {
+    throw new Error(
+      "Image hosting is not configured. Please add CLOUDINARY_URL to your environment variables (e.g. in your Render dashboard under techlens-api -> Environment)."
+    );
+  }
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {

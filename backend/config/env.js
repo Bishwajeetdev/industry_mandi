@@ -1,16 +1,31 @@
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Workspace scripts execute from backend/, while shared secrets live at project root.
-dotenv.config({ path: new URL('../../.env', import.meta.url) });
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Check possible .env locations: root .env, backend/.env, or cwd .env
+const candidates = [
+  path.resolve(__dirname, '../../.env'),
+  path.resolve(__dirname, '../.env'),
+  path.resolve(process.cwd(), '.env'),
+];
+
+for (const envPath of candidates) {
+  dotenv.config({ path: envPath });
+}
 
 // Sanitize CLOUDINARY_URL immediately before the Cloudinary SDK is imported anywhere.
-// Cloudinary's internal lib/config.js validates process.env.CLOUDINARY_URL immediately upon
-// import and throws "Invalid CLOUDINARY_URL protocol. URL should begin with 'cloudinary://'"
-// if the URL is wrapped in quotes, has the 'CLOUDINARY_URL=' prefix, or is invalid.
 if (process.env.CLOUDINARY_URL) {
   let cleaned = String(process.env.CLOUDINARY_URL).trim();
   cleaned = cleaned.replace(/^CLOUDINARY_URL\s*=\s*/i, '');
   cleaned = cleaned.replace(/^['"]|['"]$/g, '').trim();
+
+  if (cleaned.startsWith('cloudinary:/') && !cleaned.startsWith('cloudinary://')) {
+    cleaned = cleaned.replace(/^cloudinary:\/+/i, 'cloudinary://');
+  } else if (!cleaned.startsWith('cloudinary://') && cleaned.includes('@') && cleaned.includes(':')) {
+    cleaned = `cloudinary://${cleaned}`;
+  }
 
   if (cleaned.startsWith('cloudinary://')) {
     process.env.CLOUDINARY_URL = cleaned;
