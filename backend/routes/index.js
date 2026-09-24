@@ -155,7 +155,7 @@ r.patch("/admin/resources/:type/:id", ah(admin.updateResource));
 r.delete("/admin/resources/:type/:id", ah(admin.deleteResource));
 r.patch("/admin/vendors/:id", ah(admin.updateVendor));
 r.delete("/admin/vendors/:id", ah(admin.deleteUser));
-r.patch("/admin/products/:id", ah(admin.editProduct));
+r.patch("/admin/products/:id", uploadLimiter, productImages, ah(products.adminUpdate));
 r.delete("/admin/products/:id", ah(admin.deleteProduct));
 r.post("/admin/products/:id/review", ah(admin.reviewProduct));
 r.post(

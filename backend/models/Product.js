@@ -2,10 +2,14 @@ import mongoose from "mongoose";
 const imageSchema = new mongoose.Schema(
   {
     url: { type: String, required: true },
+    publicId: { type: String, index: true },
     filename: String,
     originalName: String,
     mimeType: String,
     size: Number,
+    width: Number,
+    height: Number,
+    format: String,
     uploadedAt: { type: Date, default: Date.now },
     alt: String,
     isPrimary: { type: Boolean, default: false },

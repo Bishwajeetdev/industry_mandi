@@ -4701,6 +4701,7 @@ function AdminList() {
     [params] = useSearchParams(),
     [state, setState] = useState({ loading: true, items: [], error: "" }),
     [editor, setEditor] = useState(null),
+    [productImageFiles, setProductImageFiles] = useState([]),
     [notice, setNotice] = useState(""),
     status = params.get("status") || "";
   const resourceFields = {
@@ -4759,6 +4760,7 @@ function AdminList() {
     const next = { ...record };
     if (resource === "orders") next.tracking = JSON.stringify(record.tracking || {}, null, 2);
     setEditor(next);
+    setProductImageFiles([]);
     setNotice("");
   };
   const load = () => {
@@ -4802,7 +4804,17 @@ function AdminList() {
       }
     }
     try {
-      const response = await api.patch(`/admin/resources/${resource}/${editor._id}`, changes);
+      let response;
+      if (resource === "products") {
+        const data = new FormData();
+        Object.entries(changes).forEach(([key, value]) => data.append(key, typeof value === "object" ? JSON.stringify(value) : value));
+        data.append("retainedImages", JSON.stringify(editor.images || []));
+        data.append("primaryImageIndex", String((editor.images || []).findIndex((image) => image.isPrimary)));
+        productImageFiles.forEach((file) => data.append("images", file));
+        response = await api.patch(`/admin/products/${editor._id}`, data);
+      } else {
+        response = await api.patch(`/admin/resources/${resource}/${editor._id}`, changes);
+      }
       setState((s) => ({ ...s, items: s.items.map((item) => item._id === editor._id ? { ...item, ...response.data.data } : item) }));
       setEditor(null);
       setNotice(response.data.message || "Record updated");
@@ -4867,6 +4879,16 @@ function AdminList() {
                 </label>
               ))}
               <label className="col-md-6">Status<select required value={editor.status || statusOptions[0]} onChange={(e) => setEditor({ ...editor, status: e.target.value })}>{statusOptions.map((option) => <option key={option}>{option}</option>)}</select></label>
+              {resource === "products" && <label className="col-12">Product images
+                <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => {
+                  const files = [...event.target.files].filter((file) => ["image/jpeg", "image/png", "image/webp"].includes(file.type) && file.size <= 5 * 1024 * 1024);
+                  if (files.length !== event.target.files.length) setNotice("Use JPG, JPEG, PNG, or WebP files up to 5 MB.");
+                  setProductImageFiles((current) => [...current, ...files].slice(0, 8 - (editor.images || []).length));
+                  event.target.value = "";
+                }} />
+                <small className="text-secondary d-block">Reorder existing images with arrows, make one primary, or remove it. New images upload when you save.</small>
+                <div className="image-previews">{(editor.images || []).map((image, index) => <div className="image-preview" key={image.publicId || image.url}><img src={image.url} alt="Product" />{image.isPrimary && <span>Primary</span>}<div><button type="button" disabled={!index} onClick={() => { const images = [...editor.images]; [images[index - 1], images[index]] = [images[index], images[index - 1]]; setEditor({ ...editor, images }); }}>←</button><button type="button" disabled={index === editor.images.length - 1} onClick={() => { const images = [...editor.images]; [images[index + 1], images[index]] = [images[index], images[index + 1]]; setEditor({ ...editor, images }); }}>→</button><button type="button" onClick={() => setEditor({ ...editor, images: editor.images.map((item, itemIndex) => ({ ...item, isPrimary: itemIndex === index })) })}>★</button><button type="button" onClick={() => setEditor({ ...editor, images: editor.images.filter((_, itemIndex) => itemIndex !== index) })}>×</button></div></div>)}{productImageFiles.map((file, index) => <div className="image-preview" key={`${file.name}-${index}`}><img src={URL.createObjectURL(file)} alt="New product preview" /><div><button type="button" onClick={() => setProductImageFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div></div>)}</div>
+              </label>}
             </div>
             <div className="admin-editor-actions">
               <button className="btn btn-primary btn-sm"><i className="bi bi-check2" /> Save changes</button>
@@ -5840,6 +5862,7 @@ function ProductSubmission() {
   const [state, setState] = useState({
     items: [],
     loading: true,
+    saving: false,
     error: "",
     message: "",
   }),
@@ -5899,6 +5922,7 @@ function ProductSubmission() {
     });
   const submit = async (e, draft = false) => {
     e.preventDefault();
+    setState((s) => ({ ...s, saving: true, error: "", message: "" }));
     try {
       const data = new FormData();
       const specifications = JSON.stringify(pairsToObj(specPairs));
@@ -5907,9 +5931,11 @@ function ProductSubmission() {
         ([k, v]) => data.append(k, v),
       );
       images.forEach((f) => data.append("images", f));
+      data.append("primaryImageIndex", "0");
       await api.post("/products", data);
       setState((s) => ({
         ...s,
+        saving: false,
         message: draft ? "Draft saved." : "Product submitted for review.",
         error: "",
       }));
@@ -5920,6 +5946,7 @@ function ProductSubmission() {
     } catch (e) {
       setState((s) => ({
         ...s,
+        saving: false,
         error: e.response?.data?.message || e.message || "Unable to submit product.",
       }));
     }
@@ -6117,10 +6144,11 @@ function ProductSubmission() {
                 className="btn btn-outline-primary"
                 type="button"
                 onClick={(e) => submit(e, true)}
+                disabled={state.saving}
               >
-                Save draft
+                {state.saving ? "Uploading…" : "Save draft"}
               </button>
-              <button className="btn btn-primary">Submit for approval</button>
+              <button className="btn btn-primary" disabled={state.saving}>{state.saving ? "Uploading…" : "Submit for approval"}</button>
             </div>
           </form>
         </div>
@@ -6856,6 +6884,7 @@ function AdminProductCreate() {
     try {
       const data = new FormData();
       Object.entries(form).forEach(([key, value]) => data.append(key, value));
+      data.append("primaryImageIndex", "0");
       images.forEach((image) => data.append("images", image));
       await api.post("/products", data);
       nav("/admin/products");
@@ -6868,6 +6897,12 @@ function AdminProductCreate() {
       });
     }
   };
+  const move = (index, direction) => setImages((current) => {
+    const next = [...current], target = index + direction;
+    if (target < 0 || target >= next.length) return current;
+    [next[index], next[target]] = [next[target], next[index]];
+    return next;
+  });
   return (
     <main className="container py-5">
       <Link to="/admin" className="small text-decoration-none">
@@ -6975,12 +7010,7 @@ function AdminProductCreate() {
           multiple
           onChange={choose}
         />
-        {images.length > 0 && (
-          <small className="d-block text-secondary mb-3">
-            {images.length} image{images.length === 1 ? "" : "s"} selected. The
-            first image is primary.
-          </small>
-        )}
+        {images.length > 0 && <><small className="d-block text-secondary mb-2">{images.length} image{images.length === 1 ? "" : "s"} selected. Use the star to set the primary image.</small><div className="image-previews mb-3">{images.map((file, index) => <div className="image-preview" key={`${file.name}-${index}`}><img src={URL.createObjectURL(file)} alt="Product preview" />{index === 0 && <span>Primary</span>}<div><button type="button" disabled={!index} onClick={() => move(index, -1)}>←</button><button type="button" disabled={index === images.length - 1} onClick={() => move(index, 1)}>→</button><button type="button" onClick={() => setImages((current) => [current[index], ...current.filter((_, itemIndex) => itemIndex !== index)])}>★</button><button type="button" onClick={() => setImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div></div>)}</div></>}
         <button className="btn btn-primary" disabled={state.saving}>
           {state.saving ? "Creating…" : "Create approved product"}
         </button>

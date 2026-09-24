@@ -7,6 +7,7 @@ import Order from "../models/Order.js";
 import slugify from "slugify";
 import { rank } from "../services/rankingService.js";
 import { parseSearch, summarizeComparison } from "../services/aiService.js";
+import { destroyProductImages, uploadProductImage } from "../services/cloudinaryService.js";
 
 const publicStatuses = ["approved", "published"];
 
@@ -22,24 +23,17 @@ const parse = (value, fallback = {}) => {
   }
 };
 
-const imageUrl = (req, file) =>
-  `${req.protocol}://${req.get("host")}/uploads/products/${file.filename}`;
-
-const normalizeImages = (req, existing = []) => {
+const retainedImages = (req, existing = []) => {
   const retained = parse(req.body.retainedImages, existing);
-  const old = (Array.isArray(retained) ? retained : [])
-    .map((x) => (typeof x === "string" ? { url: x } : x))
-    .filter((x) => x?.url);
-  const fresh = (req.files || []).map((file) => ({
-    url: imageUrl(req, file),
-    filename: file.filename,
-    originalName: file.originalname,
-    mimeType: file.mimetype,
-    size: file.size,
-    uploadedAt: new Date(),
-    alt: "",
-    isPrimary: false,
-  }));
+  const allowed = new Map(existing.map((image) => [image.publicId || image.url, image]));
+  return (Array.isArray(retained) ? retained : [])
+    .map((image) => typeof image === "string" ? image : image?.publicId || image?.url)
+    .map((key) => allowed.get(key))
+    .filter(Boolean)
+    .map((image) => image.toObject?.() || image);
+};
+
+const normalizeImages = (req, old = [], fresh = []) => {
   const images = [...old, ...fresh];
   const requested = Number(req.body.primaryImageIndex);
   const primary =
@@ -50,6 +44,38 @@ const normalizeImages = (req, existing = []) => {
     image.isPrimary = index === (primary >= 0 ? primary : 0);
   });
   return images;
+};
+
+const uploadedImage = (file, result) => ({
+  url: result.eager?.[0]?.secure_url || result.secure_url,
+  publicId: result.public_id,
+  originalName: file.originalname,
+  mimeType: file.mimetype,
+  size: result.bytes || file.size,
+  width: result.width,
+  height: result.height,
+  format: result.format,
+  uploadedAt: new Date(),
+  alt: "",
+  isPrimary: false,
+});
+
+const uploadImages = async (req, productId) => {
+  const uploaded = [];
+  try {
+    for (const file of req.files || []) {
+      const result = await uploadProductImage(file, {
+        productId,
+        vendorId: req.user._id,
+        role: req.user.role,
+      });
+      uploaded.push(uploadedImage(file, result));
+    }
+    return uploaded;
+  } catch (error) {
+    await destroyProductImages(uploaded).catch(() => {});
+    throw error;
+  }
 };
 
 /**
@@ -235,7 +261,6 @@ export async function productRecommendations(req, res) {
 // ── C5: Strip protected fields for vendor product creation ────────────────────
 export async function create(req, res) {
   const data = productData(req);
-  data.images = normalizeImages(req);
 
   // These are always set by the server — never accepted from client
   data.submittedBy = req.user._id;
@@ -253,7 +278,16 @@ export async function create(req, res) {
 
   data.slug = await uniqueSlug(data);
   data.sku = data.sku || (await uniqueSku(data));
-  const p = await Product.create(data);
+  // Allocate the MongoDB id before upload so assets are consistently grouped by product.
+  const p = new Product(data);
+  const freshImages = await uploadImages(req, p._id);
+  p.images = normalizeImages(req, [], freshImages);
+  try {
+    await p.save();
+  } catch (error) {
+    await destroyProductImages(freshImages).catch(() => {});
+    throw error;
+  }
   res.status(201).json({
     success: true,
     message:
@@ -286,13 +320,29 @@ export async function vendorUpdate(req, res) {
   // Strip all protected fields before merging — vendor cannot self-approve
   VENDOR_PROTECTED_FIELDS.forEach((f) => delete data[f]);
 
-  if (req.files?.length || req.body.retainedImages !== undefined)
-    data.images = normalizeImages(req, p.images);
+  let freshImages = [];
+  const changingImages = req.files?.length || req.body.retainedImages !== undefined;
+  const previousImages = changingImages ? p.images.map((image) => image.toObject?.() || image) : [];
+  const oldImages = changingImages ? retainedImages(req, p.images) : [];
+  if (changingImages) {
+    freshImages = await uploadImages(req, p._id);
+    data.images = normalizeImages(req, oldImages, freshImages);
+  }
   if (req.files?.length) data.lastUploadedBy = req.user._id;
 
   Object.assign(p, data);
   if (data.name || data.brand || data.model) p.slug = await uniqueSlug(p);
-  await p.save();
+  try {
+    await p.save();
+  } catch (error) {
+    await destroyProductImages(freshImages).catch(() => {});
+    throw error;
+  }
+  if (changingImages) {
+    const retainedIds = new Set(oldImages.map((image) => image.publicId || image.url));
+    // Only remove assets no longer represented in the saved document.
+    await destroyProductImages(previousImages.filter((image) => !retainedIds.has(image.publicId || image.url))).catch((error) => console.error("Cloudinary cleanup failed", error));
+  }
   res.json({ success: true, message: "Product draft updated", data: p });
 }
 
@@ -336,8 +386,55 @@ export async function vendorDelete(req, res) {
       message: "Only draft, rejected, or changes-requested products can be deleted",
     });
 
+  await destroyProductImages(product.images).catch((error) => {
+    console.error("Cloudinary cleanup failed", error);
+    throw new Error("Unable to remove product images from image hosting. Product was not deleted.");
+  });
   await product.deleteOne();
   res.json({ success: true, message: "Product deleted successfully" });
+}
+
+export async function adminUpdate(req, res) {
+  const product = await Product.findById(req.params.id);
+  if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+
+  const data = productData(req);
+  const allowed = new Set([
+    "name", "brand", "model", "sku", "category", "subcategory", "description",
+    "technicalSpecifications", "specifications", "price", "stock", "metrics", "pros",
+    "cons", "seo", "oemManual",
+  ]);
+  Object.keys(data).forEach((key) => { if (!allowed.has(key)) delete data[key]; });
+
+  const changingImages = req.files?.length || req.body.retainedImages !== undefined;
+  const previousImages = changingImages ? product.images.map((image) => image.toObject?.() || image) : [];
+  const retained = changingImages ? retainedImages(req, product.images) : [];
+  let freshImages = [];
+  if (changingImages) {
+    freshImages = await uploadImages(req, product._id);
+    data.images = normalizeImages(req, retained, freshImages);
+  }
+  if (req.body.status && ["approved", "rejected", "changes_requested", "published", "archived"].includes(req.body.status)) {
+    data.status = req.body.status;
+    data.reviewReason = (req.body.reason || "").trim() || undefined;
+    data.reviewedBy = req.user._id;
+    data.reviewedAt = new Date();
+    if (data.status === "published") data.publishedAt = new Date();
+  }
+
+  Object.assign(product, data);
+  if (data.name || data.brand || data.model) product.slug = await uniqueSlug(product);
+  try {
+    await product.save();
+  } catch (error) {
+    await destroyProductImages(freshImages).catch(() => {});
+    throw error;
+  }
+  if (changingImages) {
+    const retainedIds = new Set(retained.map((image) => image.publicId || image.url));
+    await destroyProductImages(previousImages.filter((image) => !retainedIds.has(image.publicId || image.url))).catch((error) => console.error("Cloudinary cleanup failed", error));
+  }
+  res.json({ success: true, message: "Product updated", data: product });
 }
 
 export async function compare(req, res) {

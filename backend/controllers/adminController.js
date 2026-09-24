@@ -7,6 +7,7 @@ import RankingConfiguration from "../models/RankingConfiguration.js";
 import AuditLog from "../models/AuditLog.js";
 import Notification from "../models/Notification.js";
 import Order from "../models/Order.js";
+import { destroyProductImages } from "../services/cloudinaryService.js";
 const recipients = {
   User: (x) => x._id,
   Product: (x) => x.submittedBy,
@@ -173,6 +174,10 @@ export async function deleteProduct(req, res) {
       .status(404)
       .json({ success: false, message: "Product not found" });
 
+  await destroyProductImages(product.images).catch((error) => {
+    console.error("Cloudinary cleanup failed", error);
+    throw new Error("Unable to remove product images from image hosting. Product was not deleted.");
+  });
   await product.deleteOne();
   await AuditLog.create({
     user: req.user._id,
