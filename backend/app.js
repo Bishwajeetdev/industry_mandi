@@ -97,6 +97,30 @@ app.use((err, req, res, next) => {
   } else {
     console.error(err);
   }
+
+  // Mongoose duplicate key (unique index violation: slug, sku, email, etc.)
+  if (err.name === 'MongoServerError' && err.code === 11000) {
+    const field = Object.keys(err.keyPattern || err.keyValue || {})[0] || 'field';
+    return res.status(409).json({
+      success: false,
+      message: `A product with this ${field} already exists. Please change the name, brand, or model.`,
+    });
+  }
+
+  // Busboy multipart stream errors (incomplete upload, malformed boundary, etc.)
+  // These are NOT MulterErrors — they come from the underlying busboy parser.
+  if (
+    err.message === 'Unexpected end of form' ||
+    Array.isArray(err.storageErrors) ||
+    err.message?.toLowerCase().includes('multipart') ||
+    (err.message?.toLowerCase().includes('form') && !err.name?.includes('Validation'))
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: 'The image upload was incomplete or the request was malformed. Please try again.',
+    });
+  }
+
   const status =
     err.name === 'ValidationError' ? 422
     : err.name === 'CastError' || err.name === 'MulterError' ? 400
@@ -105,7 +129,7 @@ app.use((err, req, res, next) => {
     success: false,
     message: status === 500 ? 'Unexpected server error' : err.message,
     // Never expose error details or stack in production
-    ...(isProd ? {} : { error: err.errors }),
+    ...(isProd ? {} : { error: err.errors, detail: err.message }),
   });
 });
 

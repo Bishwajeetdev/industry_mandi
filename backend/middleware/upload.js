@@ -20,9 +20,49 @@ const fileFilter = (req, file, done) => {
   done(null, true);
 };
 
-export const productImages = multer({
+const _rawProductImages = multer({
   // Files remain in memory only and are streamed to Cloudinary.
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 8 },
   fileFilter,
 }).array("images", 8);
+
+/**
+ * Multer middleware wrapper that catches both MulterErrors and Busboy stream
+ * errors (e.g. "Unexpected end of form") and converts them all to a proper
+ * 400 response instead of leaking a 500 "Unexpected server error".
+ */
+export const productImages = (req, res, next) => {
+  _rawProductImages(req, res, (err) => {
+    if (!err) return next();
+
+    // MulterError — file size, file count, wrong field, etc.
+    if (err instanceof multer.MulterError) {
+      const messages = {
+        LIMIT_FILE_SIZE: "Each image must be 5 MB or smaller.",
+        LIMIT_FILE_COUNT: "You can upload a maximum of 8 images per product.",
+        LIMIT_UNEXPECTED_FILE: err.message || "Unexpected file field.",
+      };
+      const message = messages[err.code] || err.message || "File upload error.";
+      return res.status(400).json({ success: false, message });
+    }
+
+    // Busboy stream errors — "Unexpected end of form", connection drops, etc.
+    // These are plain Errors thrown by the underlying multipart parser and are
+    // client-side problems (malformed request), not server bugs.
+    if (
+      err.message === "Unexpected end of form" ||
+      Array.isArray(err.storageErrors) ||
+      err.message?.toLowerCase().includes("multipart") ||
+      err.message?.toLowerCase().includes("form")
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "The image upload was incomplete or the request was malformed. Please try again.",
+      });
+    }
+
+    // Unknown error — let the global error handler deal with it.
+    next(err);
+  });
+};
