@@ -27,6 +27,34 @@ const _rawProductImages = multer({
   fileFilter,
 }).array("images", 8);
 
+const vendorAssetFilter = (req, file, done) => {
+  const allowed = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+  if (!allowed.has(file.mimetype)) {
+    return done(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "Use JPG, PNG, WebP, or PDF files."));
+  }
+  file.originalname = path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, "_");
+  done(null, true);
+};
+
+const _rawVendorAsset = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter: vendorAssetFilter,
+}).single("asset");
+
+export const vendorAsset = (req, res, next) => {
+  _rawVendorAsset(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError) {
+      const message = err.code === "LIMIT_FILE_SIZE"
+        ? "Vendor files must be 10 MB or smaller."
+        : err.message || "Vendor file upload error.";
+      return res.status(400).json({ success: false, message });
+    }
+    next(err);
+  });
+};
+
 /**
  * Multer middleware wrapper that catches both MulterErrors and Busboy stream
  * errors (e.g. "Unexpected end of form") and converts them all to a proper

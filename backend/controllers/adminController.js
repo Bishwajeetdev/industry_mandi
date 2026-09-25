@@ -7,6 +7,7 @@ import RankingConfiguration from "../models/RankingConfiguration.js";
 import AuditLog from "../models/AuditLog.js";
 import Notification from "../models/Notification.js";
 import Order from "../models/Order.js";
+import crypto from "crypto";
 import { destroyProductImages } from "../services/cloudinaryService.js";
 const recipients = {
   User: (x) => x._id,
@@ -241,6 +242,67 @@ export async function dashboard(req, res) {
       pairings,
       orders,
     },
+  });
+}
+
+const vendorRecordFields = [
+  "name",
+  "email",
+  "role",
+  "status",
+  "profile",
+  "createdAt",
+  "updatedAt",
+].join(" ");
+
+export async function vendorRecords(req, res) {
+  const vendors = await User.find({ role: "vendor" })
+    .select(vendorRecordFields)
+    .sort("-createdAt")
+    .limit(500);
+  res.json({ success: true, message: "Vendor records retrieved", data: vendors });
+}
+
+export async function reviewVendorDocument(req, res) {
+  const { documentName, status } = req.body;
+  if (!documentName || !["pending", "approved", "rejected"].includes(status))
+    return res.status(422).json({ success: false, message: "Valid document name and status are required" });
+
+  const vendor = await User.findOne({ _id: req.params.id, role: "vendor" });
+  if (!vendor) return res.status(404).json({ success: false, message: "Vendor not found" });
+
+  const documents = (vendor.profile?.documents || []).map((document) =>
+    document.name === String(documentName).trim()
+      ? { ...(document.toObject?.() || document), status }
+      : document,
+  );
+  vendor.profile = { ...(vendor.profile?.toObject?.() || {}), documents };
+  await vendor.save();
+  await AuditLog.create({
+    user: req.user._id,
+    action: `VendorDocument_${status}`,
+    entityId: vendor._id,
+    ip: req.ip,
+  });
+  res.json({ success: true, message: `Document ${status}`, data: vendor });
+}
+
+export async function resetVendorPassword(req, res) {
+  const vendor = await User.findOne({ _id: req.params.id, role: "vendor" }).select("+password");
+  if (!vendor) return res.status(404).json({ success: false, message: "Vendor not found" });
+  const temporaryPassword = crypto.randomBytes(9).toString("base64url");
+  vendor.password = temporaryPassword;
+  await vendor.save();
+  await AuditLog.create({
+    user: req.user._id,
+    action: "Vendor_password_reset",
+    entityId: vendor._id,
+    ip: req.ip,
+  });
+  res.json({
+    success: true,
+    message: "Temporary password generated. Share it securely with the vendor.",
+    data: { temporaryPassword },
   });
 }
 // ── C7: Whitelist allowed weight keys and use $set — never pass req.body directly ──

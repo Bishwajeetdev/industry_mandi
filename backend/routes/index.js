@@ -10,7 +10,7 @@ import * as account from "../controllers/accountController.js";
 import * as order from "../controllers/orderController.js";
 import { protect, optionalProtect, allow } from "../middleware/auth.js";
 import { asyncHandler as ah } from "../middleware/asyncHandler.js";
-import { productImages } from "../middleware/upload.js";
+import { productImages, vendorAsset } from "../middleware/upload.js";
 import * as priceFinder from "../controllers/priceFinderController.js";
 
 // ─── Per-route rate limiters ──────────────────────────────────────────────────
@@ -94,7 +94,10 @@ r.get("/auth/me", protect, ah(auth.me));
 // Account
 r.get("/account", protect, allow("buyer", "vendor"), ah(account.get));
 r.patch("/account", protect, allow("buyer", "vendor"), ah(account.update));
+r.patch("/vendor/settings", protect, allow("vendor"), ah(account.update));
 r.patch("/account/password", protect, allow("buyer", "vendor"), ah(account.password));
+r.post("/account/deactivate", protect, allow("vendor"), ah(account.deactivate));
+r.post("/vendor/settings/upload", protect, allow("vendor"), uploadLimiter, vendorAsset, ah(account.uploadVendorAssetFile));
 r.patch("/account/bank", protect, allow("vendor"), ah(account.updateBank));
 r.patch("/account/orders/:id/cancel", protect, allow("buyer", "vendor"), ah(account.cancelOrder));
 r.patch("/account/orders/:id", protect, allow("vendor"), ah(account.updateOrder));
@@ -151,6 +154,7 @@ r.post("/orders", protect, allow("buyer"), orderLimiter, ah(order.create));
 r.use("/admin", protect, allow("admin"));
 r.get("/admin/dashboard", ah(admin.dashboard));
 r.get("/admin/queue/:type", ah(admin.queue));
+r.get("/admin/vendors/records", ah(admin.vendorRecords));
 r.get("/admin/resources/:type", ah(admin.resourceList));
 r.patch("/admin/resources/:type/:id", ah(admin.updateResource));
 r.delete("/admin/resources/:type/:id", ah(admin.deleteResource));
@@ -187,6 +191,8 @@ r.post(
   (q, s, n) => { q.body.status = "approved"; n(); },
   ah(admin.updateVendor),
 );
+r.patch("/admin/vendors/:id/documents", ah(admin.reviewVendorDocument));
+r.post("/admin/vendors/:id/reset-password", ah(admin.resetVendorPassword));
 r.post(
   "/admin/pairing/:id/approve",
   (q, s, n) => { q.body.status = "approved"; n(); },

@@ -89,6 +89,27 @@ export const uploadProductImage = (file, context) => {
   });
 };
 
+export const uploadVendorAsset = (file, { vendorId, assetType }) => {
+  if (!isCloudinaryConfigured() || !configureCloudinary()) {
+    throw new Error("Image hosting is not configured. Please add CLOUDINARY_URL to your environment variables.");
+  }
+  const safeType = ["logo", "banner", "document"].includes(assetType) ? assetType : "document";
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: "auto",
+        folder: `techlens/vendors/${safeFolderPart(vendorId, "unknown")}/${safeType}`,
+        use_filename: false,
+        unique_filename: true,
+        overwrite: false,
+        allowed_formats: ["jpg", "jpeg", "png", "webp", "pdf"],
+      },
+      (error, result) => (error ? reject(error) : resolve(result)),
+    );
+    stream.end(file.buffer);
+  });
+};
+
 export const destroyProductImage = async (publicId) => {
   if (!publicId || !cloudinaryUrl) return;
   await cloudinary.uploader.destroy(publicId, { resource_type: "image", invalidate: true });

@@ -1,5 +1,6 @@
 import User from "../models/User.js";
 import Order from "../models/Order.js";
+import { uploadVendorAsset } from "../services/cloudinaryService.js";
 
 // ── Safe fields exposed to the public ─────────────────────────────────────────
 const publicProfile = (user) => ({
@@ -10,6 +11,19 @@ const publicProfile = (user) => ({
   company: user.profile?.company || "",
   ownerName: user.profile?.ownerName || "",
   gstNumber: user.profile?.gstNumber || "",
+  description: user.profile?.description || "",
+  category: user.profile?.category || "",
+  website: user.profile?.website || "",
+  logo: user.profile?.logo || "",
+  banner: user.profile?.banner || "",
+  slug: user.profile?.slug || "",
+  storeStatus: user.profile?.storeStatus || "open",
+  businessHours: user.profile?.businessHours || {},
+  warehouseAddresses: user.profile?.warehouseAddresses || [],
+  language: user.profile?.language || "English",
+  currency: user.profile?.currency || "INR",
+  timezone: user.profile?.timezone || "Asia/Kolkata",
+  payoutPreference: user.profile?.payoutPreference || "",
   businessAddress: user.profile?.businessAddress || {},
   billingAddress: user.profile?.billingAddress || {},
   shippingAddress: user.profile?.shippingAddress || {},
@@ -21,6 +35,7 @@ const publicProfile = (user) => ({
       ? {
           accountName: user.profile?.bankAccount?.accountName || "",
           bankName: user.profile?.bankAccount?.bankName || "",
+          ifsc: user.profile?.bankAccount?.ifsc || "",
           accountNumberMasked: user.profile?.bankAccount?.accountNumber
             ? `•••• ${user.profile.bankAccount.accountNumber.slice(-4)}`
             : "",
@@ -86,9 +101,22 @@ export async function update(req, res) {
     req.user.name = String(req.body.name).trim().slice(0, 200);
 
   // String profile fields — length-capped
-  for (const field of ["phone", "company", "ownerName", "gstNumber"]) {
+  for (const field of ["phone", "company", "ownerName", "gstNumber", "description", "category", "website", "logo", "banner", "slug", "language", "currency", "timezone", "payoutPreference"]) {
     if (req.body[field] !== undefined)
       profile[field] = String(req.body[field]).trim().slice(0, 200);
+  }
+
+  if (req.user.role === "vendor") {
+    if (req.body.storeStatus !== undefined && ["open", "closed"].includes(req.body.storeStatus))
+      profile.storeStatus = req.body.storeStatus;
+    if (req.body.businessHours && typeof req.body.businessHours === "object")
+      profile.businessHours = Object.fromEntries(
+        ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+          .filter((day) => req.body.businessHours[day] !== undefined)
+          .map((day) => [day, String(req.body.businessHours[day]).trim().slice(0, 100)]),
+      );
+    if (Array.isArray(req.body.warehouseAddresses))
+      profile.warehouseAddresses = req.body.warehouseAddresses.slice(0, 10).map(sanitizeAddress);
   }
 
   // Nested address objects — key-whitelisted
@@ -115,8 +143,12 @@ export async function updateBank(req, res) {
   if (req.user.role !== "vendor")
     return res.status(403).json({ success: false, message: "Vendor access required" });
 
+  const storedUser = await User.findById(req.user._id).select(
+    "+profile.bankAccount.accountNumber +profile.bankAccount.ifsc",
+  );
+  const storedBank = storedUser?.profile?.bankAccount || {};
   // Validate IFSC format (India standard: 4 alpha + 0 + 6 alphanumeric)
-  const ifsc = String(req.body.ifsc || "").trim().toUpperCase();
+  const ifsc = String(req.body.ifsc || storedBank.ifsc || "").trim().toUpperCase();
   if (ifsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc))
     return res.status(422).json({ success: false, message: "Invalid IFSC code format" });
 
@@ -125,7 +157,9 @@ export async function updateBank(req, res) {
     bankAccount: {
       accountName: String(req.body.accountName || "").trim().slice(0, 200),
       bankName: String(req.body.bankName || "").trim().slice(0, 200),
-      accountNumber: String(req.body.accountNumber || "").trim().slice(0, 30),
+      accountNumber: req.body.accountNumber
+        ? String(req.body.accountNumber).trim().slice(0, 30)
+        : storedBank.accountNumber || "",
       ifsc,
     },
   };
@@ -188,4 +222,35 @@ export async function updateOrder(req, res) {
   if (req.body.returnStatus) order.returnStatus = req.body.returnStatus;
   await order.save();
   res.json({ success: true, message: "Order updated", data: order });
+}
+
+export async function deactivate(req, res) {
+  req.user.status = "suspended";
+  await req.user.save();
+  res.json({ success: true, message: "Account deactivated" });
+}
+
+export async function uploadVendorAssetFile(req, res) {
+  if (req.user.role !== "vendor")
+    return res.status(403).json({ success: false, message: "Vendor access required" });
+  if (!req.file)
+    return res.status(400).json({ success: false, message: "Choose a file to upload." });
+  const assetType = String(req.body.assetType || "").trim();
+  if (!["logo", "banner", "document"].includes(assetType))
+    return res.status(422).json({ success: false, message: "Invalid vendor asset type." });
+  const result = await uploadVendorAsset(req.file, { vendorId: req.user._id, assetType });
+  const url = result.secure_url;
+  const profile = { ...(req.user.profile?.toObject?.() || {}) };
+  if (assetType === "logo" || assetType === "banner") {
+    profile[assetType] = url;
+  } else {
+    const name = String(req.body.documentName || "Vendor document").trim().slice(0, 200);
+    profile.documents = [
+      ...(profile.documents || []).filter((document) => document.name !== name),
+      { name, url, status: "pending" },
+    ].slice(0, 20);
+  }
+  req.user.profile = profile;
+  await req.user.save();
+  res.json({ success: true, message: "File uploaded successfully.", data: publicProfile(req.user) });
 }

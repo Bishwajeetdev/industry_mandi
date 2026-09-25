@@ -1,0 +1,273 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build frontend",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"-w",
+				"frontend"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Validate frontend build",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"-w",
+				"frontend"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Rebuild frontend",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"-w",
+				"frontend"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final frontend build",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"-w",
+				"frontend"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify frontend build",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build",
+				"-w",
+				"frontend"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Complete frontend build",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set NODE_OPTIONS=--max-old-space-size=4096 && npm run build -w frontend"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build frontend",
+			"type": "shell",
+			"command": "npm run build",
+			"args": [
+				"-w",
+				"frontend"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$tsc"
+			]
+		},
+		{
+			"label": "Start app",
+			"type": "shell",
+			"command": "npm run dev",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Repair interceptor",
+			"type": "shell",
+			"command": "node -e \"const fs=require('fs'); const p='frontend/src/main.jsx'; let s=fs.readFileSync(p,'utf8'); const start=s.indexOf('api.interceptors.request.use('); const end=s.indexOf('const notifyWishlistChanged',start); if(start<0||end<0) throw new Error('interceptor block not found'); s=s.slice(0,start)+'api.interceptors.request.use((config) => {\\n  const token = localStorage.getItem(\\\"token\\\");\\n  if (token) {\\n    config.headers.Authorization = `Bearer ${token}`;\\n  }\\n  return config;\\n});\\n'+s.slice(end); fs.writeFileSync(p,s);\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Repair interceptor retry",
+			"type": "shell",
+			"command": "node -e \"const fs=require('fs');const p='frontend/src/main.jsx';let s=fs.readFileSync(p,'utf8');const a=s.indexOf('api.interceptors.request.use(');const b=s.indexOf('const notifyWishlistChanged',a);if(a<0||b<0)throw Error('block not found');const q=String.fromCharCode(96);const block='api.interceptors.request.use((config) => {\\n  const token = localStorage.getItem(\\\"token\\\");\\n  if (token) {\\n    config.headers.Authorization = '+q+'Bearer '+q+' + token + '+q+';\\n  }\\n  return config;\\n});\\n';fs.writeFileSync(p,s.slice(0,a)+block+s.slice(b));\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run interceptor repair",
+			"type": "shell",
+			"command": "node repair-interceptor.cjs",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify frontend build",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Apply interceptor repair",
+			"type": "shell",
+			"command": "node repair-interceptor.cjs",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify frontend build fixed",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Start frontend fresh",
+			"type": "shell",
+			"command": "npm run dev -w frontend",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify product navigation build",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify admin panel UI build",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify quick actions UI build",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify vendor workspace build",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify vendor pages build",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify manage store UI",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify order status fix",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build frontend",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": [
+				"$tsc"
+			]
+		},
+		{
+			"label": "Rebuild frontend",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": [
+				"$tsc"
+			]
+		},
+		{
+			"label": "Validate backend upload code",
+			"type": "shell",
+			"command": "node --check backend/middleware/upload.js; node --check backend/services/cloudinaryService.js; node --check backend/controllers/accountController.js; node --check backend/routes/index.js",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build frontend upload changes",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build after navigation update",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build profile logo update",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build vendor logo surfaces",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build vendor records UI",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Validate Vendor Records frontend",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "backend syntax validation",
+			"type": "shell",
+			"command": "node --check backend/controllers/adminController.js; node --check backend/routes/index.js; node --check backend/models/User.js",
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}
