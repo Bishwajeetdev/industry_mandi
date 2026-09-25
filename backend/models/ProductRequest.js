@@ -25,7 +25,8 @@ const productRequestSchema = new mongoose.Schema({
   productDetails: { type: extractedProductSchema, required: true },
   imageUrl: String,
   requestedAt: { type: Date, default: Date.now },
-  status: { type: String, enum: ["pending", "approved", "added"], default: "pending", index: true },
+  status: { type: String, enum: ["pending", "approved", "added", "cancelled"], default: "pending", index: true },
+  cancelledAt: Date,
 }, { timestamps: true });
 
 productRequestSchema.index({ productUrl: 1, user: 1, status: 1 });

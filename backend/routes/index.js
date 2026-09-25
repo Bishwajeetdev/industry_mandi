@@ -142,6 +142,17 @@ r.post("/buyer/wishlist/:productId", protect, allow("buyer"), ah(buyer.wishlist)
 r.get("/buyer/wishlist", protect, allow("buyer"), ah(buyer.myWishlist));
 r.get("/buyer/dashboard", protect, allow("buyer"), ah(buyer.dashboard));
 r.get("/buyer/notifications", protect, allow("buyer"), ah(buyer.notifications));
+r.get("/buyer/profile", protect, allow("buyer"), ah(buyer.profile));
+r.patch("/buyer/profile", protect, allow("buyer"), ah(buyer.updateProfile));
+r.get("/buyer/addresses", protect, allow("buyer"), ah(buyer.addresses));
+r.post("/buyer/addresses", protect, allow("buyer"), ah(buyer.addAddress));
+r.patch("/buyer/addresses/:id", protect, allow("buyer"), ah(buyer.updateAddress));
+r.delete("/buyer/addresses/:id", protect, allow("buyer"), ah(buyer.deleteAddress));
+r.get("/buyer/product-requests", protect, allow("buyer"), ah(buyer.requestHistory));
+r.patch("/buyer/product-requests/:id/cancel", protect, allow("buyer"), ah(buyer.cancelRequest));
+r.get("/buyer/notification-preferences", protect, allow("buyer"), ah(buyer.notificationPreferences));
+r.patch("/buyer/notification-preferences", protect, allow("buyer"), ah(buyer.updateNotificationPreferences));
+r.post("/buyer/account/deactivate", protect, allow("buyer"), ah(account.deactivate));
 
 // Reviews
 r.get("/reviews", ah(buyer.reviews));

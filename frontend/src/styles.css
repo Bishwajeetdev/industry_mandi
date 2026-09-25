@@ -4681,6 +4681,148 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Account Workspace */
+.buyer-account-shell {
+  display: block;
+}
+
+.buyer-account-tabs {
+  position: sticky;
+  top: 96px;
+  padding: 14px;
+  background: var(--surface-container);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-xl);
+}
+
+.buyer-account-intro {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 16px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.buyer-account-avatar {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--brand-orange-subtle);
+  color: var(--brand-orange);
+  font-size: 1.2rem;
+}
+
+.buyer-account-intro strong,
+.buyer-account-intro small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.buyer-account-intro strong { color: var(--on-surface-bright); font-size: .84rem; }
+.buyer-account-intro small { color: var(--on-surface-muted); font-size: .72rem; }
+.buyer-account-intro .eyebrow { margin-bottom: 2px; font-size: .6rem; }
+
+.buyer-account-tabs nav { display: grid; gap: 4px; }
+.buyer-account-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--on-surface-variant);
+  text-align: left;
+  font-family: var(--font-headline);
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.buyer-account-tabs button:hover,
+.buyer-account-tabs button.active { background: var(--brand-orange); color: #fff; }
+
+.buyer-account-content { min-width: 0; }
+.buyer-account-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.buyer-account-heading h1 { margin-bottom: 4px; }
+.buyer-account-heading p { margin: 0; color: var(--on-surface-muted); }
+.buyer-account-panel {
+  min-height: 320px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-content: start;
+  gap: 12px 16px;
+  padding: 28px;
+  background: var(--surface-container);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+}
+.buyer-account-panel-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  background: var(--brand-orange-subtle);
+  color: var(--brand-orange);
+  font-size: 1.25rem;
+}
+.buyer-account-panel h2 { margin: 2px 0 4px; font-size: 1.15rem; }
+.buyer-account-panel p { margin: 0; color: var(--on-surface-muted); }
+.buyer-account-placeholder {
+  grid-column: 1 / -1;
+  margin-top: 18px;
+  padding: 28px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--on-surface-muted);
+  text-align: center;
+}
+.buyer-account-panel-rich { display:block; }
+.buyer-account-panel-rich > .buyer-account-panel-icon,
+.buyer-account-panel-rich > div:nth-child(2) { display:inline-block; vertical-align:top; }
+.buyer-account-panel-rich > div:nth-child(2) { margin:0 0 0 12px; }
+.buyer-account-feedback { margin:20px 0 0; }
+.buyer-account-form {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin-top:22px;
+}
+.buyer-account-form input,.buyer-account-form select {
+  width:100%;
+  min-height:42px;
+  padding:10px 12px;
+  border:1px solid var(--border-subtle);
+  border-radius:var(--radius-md);
+  background:var(--surface);
+  color:var(--on-surface);
+}
+.buyer-account-form button { grid-column:1 / -1; justify-self:start; }
+.buyer-account-list { display:grid; gap:10px; margin-top:22px; }
+.buyer-account-list-row {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:14px;
+  border:1px solid var(--border-glass);
+  border-radius:var(--radius-md);
+  background:var(--surface-container-low);
+}
+.buyer-account-list-row > div:first-child { flex:1; min-width:0; }
+.buyer-account-list-row strong,.buyer-account-list-row small { display:block; overflow-wrap:anywhere; }
+.buyer-account-list-row small { color:var(--on-surface-muted); font-size:.76rem; }
+.buyer-account-row-actions { display:flex; gap:6px; }
+
 .account-page {
   min-height: calc(100vh - 90px);
 }
@@ -5070,6 +5212,9 @@ h1, h2, h3, h4, h5, h6 {
 .vendor-document-row strong { overflow-wrap:anywhere; }
 .vendor-document-row .db-badge { font-size:.62rem; }
 @media (max-width: 900px) {
+  .buyer-account-shell { grid-template-columns: 1fr; }
+  .buyer-account-tabs { position: static; }
+  .buyer-account-tabs nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vendor-settings-layout { grid-template-columns:1fr; }
   .vendor-settings-tabs { position:static; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px; }
   .vendor-settings-intro { grid-column:1 / -1; }
@@ -5077,6 +5222,13 @@ h1, h2, h3, h4, h5, h6 {
   .vendor-records-filters { min-width:0; }
 }
 @media (max-width: 576px) {
+  .buyer-account-heading { flex-direction: column; }
+  .buyer-account-tabs nav { display: flex; overflow-x: auto; }
+  .buyer-account-tabs button { flex: 0 0 auto; white-space: nowrap; }
+  .buyer-account-panel { padding: 20px; }
+  .buyer-account-form { grid-template-columns:1fr; }
+  .buyer-account-list-row { align-items:stretch; flex-direction:column; }
+  .buyer-account-row-actions { flex-wrap:wrap; }
   .vendor-settings-card { padding:18px; }
   .vendor-settings-tabs { grid-template-columns:1fr; }
   .vendor-verification-row { grid-template-columns:1fr; }
@@ -5168,7 +5320,7 @@ h1, h2, h3, h4, h5, h6 {
     flex-direction: column !important;
     align-items: stretch !important;
     gap: 4px !important;
-    padding: 12px 0 2px;
+    padding: 0px 0 2px;
     border-top: 1px solid var(--border-glass);
     margin-top: 12px;
   }
@@ -7399,6 +7551,14 @@ h1, h2, h3, h4, h5, h6 {
 }
 .db-modal-close:hover { background: var(--db-nav-hover-bg); color: var(--db-text); }
 .db-modal-body { padding: 22px 24px; }
+.confirmation-modal { width: min(460px, calc(100vw - 32px)); }
+.confirmation-modal-body p { margin: 0; color: var(--on-surface-variant); line-height: 1.65; }
+.confirmation-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.confirmation-modal-actions button { min-width: 92px; }
+@media (max-width: 576px) {
+  .confirmation-modal-actions { flex-direction: column-reverse; }
+  .confirmation-modal-actions button { width: 100%; }
+}
 .db-modal-footer {
   padding: 14px 24px 20px;
   display: flex;

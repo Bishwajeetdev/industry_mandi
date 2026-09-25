@@ -268,6 +268,76 @@
 			"command": "node --check backend/controllers/adminController.js; node --check backend/routes/index.js; node --check backend/models/User.js",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "Build buyer dashboard scaffold",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build buyer account integration",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Validate complete buyer dashboard",
+			"type": "shell",
+			"command": "npm run build -w frontend; node --check backend/controllers/buyerController.js; node --check backend/controllers/accountController.js; node --check backend/routes/index.js; node --check backend/models/User.js; node --check backend/models/ProductRequest.js",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build standardized buyer panel",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify buyer routing fix",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify single buyer menu",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify buyer navigation cleanup",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify dashboard header isolation",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify gender validation fix",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build confirmation modal component",
+			"type": "shell",
+			"command": "npm run build -w frontend",
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

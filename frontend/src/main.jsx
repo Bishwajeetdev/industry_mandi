@@ -254,6 +254,7 @@ function Header() {
     [signInLoading, setSignInLoading] = useState(false),
     [signInError, setSignInError] = useState(""),
     [showPassword, setShowPassword] = useState(false),
+    [confirmLogout, setConfirmLogout] = useState(false),
     dash = getDashboardPath(user?.role);
 
   useEffect(() => {
@@ -417,7 +418,7 @@ function Header() {
                   Dashboard
                 </Link>
                 <button
-                  onClick={() => { setMenuOpen(false); logout(); }}
+                  onClick={() => { setMenuOpen(false); setConfirmLogout(true); }}
                   className="btn btn-sm btn-outline-light"
                 >
                   Logout
@@ -436,6 +437,14 @@ function Header() {
           </div>
         </div>
       </nav>
+      <ConfirmationModal
+        isOpen={confirmLogout}
+        title="Confirm logout"
+        message="Are you sure you want to log out of your account?"
+        confirmText="Log out"
+        onCancel={() => setConfirmLogout(false)}
+        onConfirm={() => { setConfirmLogout(false); logout(); }}
+      />
 
       {showSignInModal && (
         <div
@@ -928,6 +937,62 @@ function Protected({ roles, children }) {
     children
   );
 }
+
+function ConfirmationModal({
+  isOpen,
+  title = "Confirm action",
+  message,
+  onConfirm,
+  onCancel,
+  confirmText = "Confirm",
+  cancelText = "Cancel",
+  isDanger = true,
+  isLoading = false,
+}) {
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !isLoading) onCancel();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, isLoading, onCancel]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="db-modal-backdrop confirmation-modal-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !isLoading) onCancel();
+      }}
+    >
+      <div className="db-modal confirmation-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmation-modal-title" aria-describedby="confirmation-modal-message">
+        <div className="db-modal-header">
+          <div>
+            <span className={`eyebrow ${isDanger ? "text-danger" : "dark"}`}>CONFIRM ACTION</span>
+            <h3 id="confirmation-modal-title" className="db-modal-title">{title}</h3>
+          </div>
+          <button type="button" className="db-modal-close" onClick={onCancel} disabled={isLoading} aria-label="Close confirmation dialog">
+            <i className="bi bi-x-lg" />
+          </button>
+        </div>
+        <div className="db-modal-body confirmation-modal-body">
+          <p id="confirmation-modal-message">{message}</p>
+          <div className="confirmation-modal-actions">
+            <button type="button" className="db-btn db-btn-outline" onClick={onCancel} disabled={isLoading}>{cancelText}</button>
+            <button type="button" className={`db-btn ${isDanger ? "db-btn-danger" : "db-btn-primary"}`} onClick={onConfirm} disabled={isLoading}>
+              {isLoading && <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />}
+              {isLoading ? "Please wait…" : confirmText}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 class RouteErrorBoundary extends React.Component {
   state = { hasError: false };
 
@@ -4451,6 +4516,8 @@ function VendorSettingsPage() {
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({});
   const [state, setState] = useState({ loading: true, saving: false, message: "", error: "" });
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const load = () => {
     setState((s) => ({ ...s, loading: true, error: "" }));
@@ -4508,9 +4575,9 @@ function VendorSettingsPage() {
     }
   };
   const deactivate = async () => {
-    if (!window.confirm("Deactivate this vendor account? You will be signed out immediately.")) return;
     try {
       await api.post("/account/deactivate");
+      setConfirmDeactivate(false);
       logout();
     } catch (error) {
       setState((s) => ({ ...s, error: error.response?.data?.message || "Unable to deactivate account." }));
@@ -4533,6 +4600,23 @@ function VendorSettingsPage() {
 
   return (
     <DashboardShell role="vendor" activeNav="/vendor/settings" title="Vendor settings">
+      <ConfirmationModal
+        isOpen={confirmDeactivate}
+        title="Deactivate vendor account"
+        message="This will deactivate your vendor account and sign you out immediately. Continue?"
+        confirmText="Deactivate account"
+        onCancel={() => setConfirmDeactivate(false)}
+        onConfirm={deactivate}
+        isLoading={state.saving}
+      />
+      <ConfirmationModal
+        isOpen={confirmLogout}
+        title="Confirm logout"
+        message="Are you sure you want to sign out of this device?"
+        confirmText="Log out"
+        onCancel={() => setConfirmLogout(false)}
+        onConfirm={() => { setConfirmLogout(false); logout(); }}
+      />
       <div className="vendor-settings-layout">
         <aside className="vendor-settings-tabs">
           <div className="vendor-settings-intro"><span className="vendor-settings-avatar">{form.logo ? <img src={form.logo} alt={`${user?.name || "Vendor"} logo`} /> : (user?.name || "V").slice(0, 1).toUpperCase()}</span><div><strong>{user?.name || "Vendor"}</strong><small>{form.company || "Manage your workspace"}</small></div></div>
@@ -4571,7 +4655,7 @@ function VendorSettingsPage() {
                 <div className="col-md-6"><label className="vendor-settings-label">Account holder</label><input className="form-control" value={form.bankAccount?.accountName || ""} onChange={(e) => update("bankAccount", { ...(form.bankAccount || {}), accountName: e.target.value })} /></div><div className="col-md-6"><label className="vendor-settings-label">Bank name</label><input className="form-control" value={form.bankAccount?.bankName || ""} onChange={(e) => update("bankAccount", { ...(form.bankAccount || {}), bankName: e.target.value })} /></div><div className="col-md-6"><label className="vendor-settings-label">Account number</label><input className="form-control" type="password" placeholder={form.bankAccount?.accountNumberMasked || "Enter account number"} value={form.bankAccount?.accountNumber || ""} onChange={(e) => update("bankAccount", { ...(form.bankAccount || {}), accountNumber: e.target.value })} /></div><div className="col-md-6"><label className="vendor-settings-label">IFSC</label><input className="form-control" value={form.bankAccount?.ifsc || ""} onChange={(e) => update("bankAccount", { ...(form.bankAccount || {}), ifsc: e.target.value.toUpperCase() })} /></div><div className="col-md-6"><label className="vendor-settings-label">UPI ID</label><input className="form-control" value={form.payoutPreference || ""} onChange={(e) => update("payoutPreference", e.target.value)} /></div>
               </div><SettingsSave saving={state.saving} onSave={saveBank} /></SettingsCard>}
               {tab === "verification" && <SettingsCard title="Vendor verification" description="Upload your verification documents securely."><div className="vendor-verification-list">{["GST certificate", "Business registration", "PAN card", "Bank verification"].map((name) => { const doc = (form.documents || []).find((item) => item.name === name) || {}; return <div className="vendor-verification-row" key={name}><div><strong>{name}</strong><small>{doc.status || "Not submitted"}</small></div><div><input className="form-control" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(e) => uploadAsset(e.target.files?.[0], "document", name)} /><small className="text-muted">JPG, PNG, WebP, or PDF · max 10 MB</small></div></div>; })}</div></SettingsCard>}
-              {tab === "account" && <SettingsCard title="Account preferences" description="Personalize your workspace and manage access."><div className="row g-3"><div className="col-md-4"><label className="vendor-settings-label">Language</label><select className="form-select" value={form.language || "English"} onChange={(e) => update("language", e.target.value)}><option>English</option><option>Hindi</option></select></div><div className="col-md-4"><label className="vendor-settings-label">Currency</label><select className="form-select" value={form.currency || "INR"} onChange={(e) => update("currency", e.target.value)}><option>INR</option><option>USD</option></select></div><div className="col-md-4"><label className="vendor-settings-label">Timezone</label><input className="form-control" value={form.timezone || "Asia/Kolkata"} onChange={(e) => update("timezone", e.target.value)} /></div></div><SettingsSave saving={state.saving} onSave={() => save({ language: form.language, currency: form.currency, timezone: form.timezone })} /><div className="vendor-danger-zone"><strong>Danger zone</strong><p>Deactivation suspends the vendor account and signs you out.</p><button type="button" className="btn btn-outline-danger" onClick={deactivate}>Deactivate account</button><button type="button" className="btn btn-outline-secondary ms-2" onClick={() => { if (window.confirm("Sign out of this device?")) logout(); }}>Log out all devices</button></div></SettingsCard>}
+              {tab === "account" && <SettingsCard title="Account preferences" description="Personalize your workspace and manage access."><div className="row g-3"><div className="col-md-4"><label className="vendor-settings-label">Language</label><select className="form-select" value={form.language || "English"} onChange={(e) => update("language", e.target.value)}><option>English</option><option>Hindi</option></select></div><div className="col-md-4"><label className="vendor-settings-label">Currency</label><select className="form-select" value={form.currency || "INR"} onChange={(e) => update("currency", e.target.value)}><option>INR</option><option>USD</option></select></div><div className="col-md-4"><label className="vendor-settings-label">Timezone</label><input className="form-control" value={form.timezone || "Asia/Kolkata"} onChange={(e) => update("timezone", e.target.value)} /></div></div><SettingsSave saving={state.saving} onSave={() => save({ language: form.language, currency: form.currency, timezone: form.timezone })} /><div className="vendor-danger-zone"><strong>Danger zone</strong><p>Deactivation suspends the vendor account and signs you out.</p><button type="button" className="btn btn-outline-danger" onClick={() => setConfirmDeactivate(true)}>Deactivate account</button><button type="button" className="btn btn-outline-secondary ms-2"               onClick={() => setConfirmLogout(true)}>Log out all devices</button></div></SettingsCard>}
             </>
           )}
         </section>
@@ -4593,6 +4677,7 @@ function DashboardShell({ children, role, activeNav, title, actions }) {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchVal, setSearchVal] = useState("");
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const currentRole = role || user?.role || "buyer";
 
@@ -4627,16 +4712,23 @@ function DashboardShell({ children, role, activeNav, title, actions }) {
     buyer: [
       { section: "Main" },
       { to: "/dashboard/buyer", label: "Dashboard", icon: "bi-grid-1x2" },
+      { section: "Buyer Account" },
+      { to: "/buyer/account?section=profile", label: "Buyer Profile", icon: "bi-person", sectionKey: "profile" },
+      { to: "/buyer/account?section=addresses", label: "My Addresses", icon: "bi-geo-alt", sectionKey: "addresses" },
+      { to: "/buyer/account?section=orders", label: "Orders", icon: "bi-truck", sectionKey: "orders" },
+      { to: "/buyer/account?section=wishlist", label: "Saved Products", icon: "bi-heart", sectionKey: "wishlist" },
+      { to: "/buyer/account?section=requests", label: "Product Requests", icon: "bi-send", sectionKey: "requests" },
+      { to: "/buyer/account?section=payments", label: "Payments", icon: "bi-credit-card", sectionKey: "payments" },
+      { to: "/buyer/account?section=notifications", label: "Notifications", icon: "bi-bell", sectionKey: "notifications" },
+      { to: "/buyer/account?section=security", label: "Account & Security", icon: "bi-shield-lock", sectionKey: "security" },
       { section: "Marketplace" },
       { to: "/products", label: "Inventory & Catalog", icon: "bi-box-seam" },
       { to: "/compare", label: "Reports & Compare", icon: "bi-bar-chart" },
       { to: "/price-finder", label: "Price Finder", icon: "bi-search" },
-      { section: "Procurement" },
-      { to: "/account", label: "Orders", icon: "bi-truck" },
-      { to: "/wishlist", label: "Suppliers & Wishlist", icon: "bi-heart" },
       { to: "/cart", label: "Active Cart", icon: "bi-bag" },
     ],
   }[currentRole] || [];
+  const buyerSection = new URLSearchParams(location.search).get("section") || "profile";
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -4675,8 +4767,9 @@ function DashboardShell({ children, role, activeNav, title, actions }) {
               );
             }
             const isActive =
+              (currentRole === "buyer" && item.sectionKey === buyerSection && location.pathname === "/buyer/account") ||
               activeNav === item.to ||
-              location.pathname === item.to ||
+              (location.pathname === item.to && !item.sectionKey) ||
               (item.to !== "/admin" &&
                 item.to !== "/vendor" &&
                 item.to !== "/dashboard/buyer" &&
@@ -4699,20 +4792,28 @@ function DashboardShell({ children, role, activeNav, title, actions }) {
         </nav>
 
         <div className="db-sidebar-footer">
-          <Link to={currentRole === "vendor" ? "/vendor/settings" : "/account"} className="db-nav-link" title="Settings">
+          <Link to={currentRole === "vendor" ? "/vendor/settings" : "/buyer/account?section=security"} className="db-nav-link" title="Settings">
             <i className="bi bi-gear" />
             <span>Settings</span>
           </Link>
           <button
             type="button"
             className="db-nav-link text-danger"
-            onClick={logout}
+            onClick={() => setConfirmLogout(true)}
           >
             <i className="bi bi-box-arrow-left text-danger" />
             <span className="text-danger">Log Out</span>
           </button>
         </div>
       </aside>
+      <ConfirmationModal
+        isOpen={confirmLogout}
+        title="Confirm logout"
+        message="Are you sure you want to log out of this account?"
+        confirmText="Log out"
+        onCancel={() => setConfirmLogout(false)}
+        onConfirm={() => { setConfirmLogout(false); logout(); }}
+      />
 
       <header className="db-topbar">
         <button
@@ -4755,7 +4856,7 @@ function DashboardShell({ children, role, activeNav, title, actions }) {
           </Link>
 
           <Link
-            to={currentRole === "vendor" ? "/vendor/settings" : "/account"}
+            to={currentRole === "vendor" ? "/vendor/settings" : currentRole === "buyer" ? "/buyer/account?section=profile" : "/account"}
             className="db-avatar"
             title={user?.name || "Profile"}
             style={{ textDecoration: "none" }}
@@ -5302,6 +5403,7 @@ function AdminVendorRecords() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
+  const [confirmReset, setConfirmReset] = useState(null);
   const pageSize = 10;
 
   const load = () => {
@@ -5343,17 +5445,25 @@ function AdminVendorRecords() {
     } catch (error) { notify(error.response?.data?.message || error.message); }
   };
   const resetPassword = async (vendor) => {
-    if (!window.confirm(`Reset the password for ${vendor.email}?`)) return;
     try {
       const response = await api.post(`/admin/vendors/${vendor._id}/reset-password`);
       notify(`Temporary password: ${response.data.data.temporaryPassword}`);
     } catch (error) { notify(error.response?.data?.message || error.message); }
+    finally { setConfirmReset(null); }
   };
 
   if (state.loading) return <DashboardShell role="admin" activeNav="/admin/vendors" title="Vendor Records"><Loading label="Loading vendor records…" /></DashboardShell>;
   if (state.error) return <DashboardShell role="admin" activeNav="/admin/vendors" title="Vendor Records"><ErrorState message={state.error} onRetry={load} /></DashboardShell>;
   return (
     <DashboardShell role="admin" activeNav="/admin/vendors" title="Vendor Records">
+      <ConfirmationModal
+        isOpen={Boolean(confirmReset)}
+        title="Reset vendor password"
+        message={`Reset the password for ${confirmReset?.email || "this vendor"}?`}
+        confirmText="Reset password"
+        onCancel={() => setConfirmReset(null)}
+        onConfirm={() => resetPassword(confirmReset)}
+      />
       {state.notice && <div className="alert alert-info d-flex justify-content-between align-items-center"><span>{state.notice}</span><button type="button" className="btn-close" onClick={() => notify("")} /></div>}
       <div className="db-card vendor-records-toolbar">
         <div><h3 className="db-card-title mb-1">Vendor directory</h3><p className="text-secondary mb-0 small">Review profile, store, payment, contact, and verification records.</p></div>
@@ -5375,7 +5485,7 @@ function AdminVendorRecords() {
         </tbody></table></div>
         <div className="vendor-records-pagination"><button type="button" className="db-btn db-btn-outline db-btn-sm" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Previous</button><span>Page {page} of {totalPages}</span><button type="button" className="db-btn db-btn-outline db-btn-sm" disabled={page === totalPages} onClick={() => setPage((current) => current + 1)}>Next</button></div>
       </div>
-      {selected && <VendorRecordDetails vendor={selected} onClose={() => setSelected(null)} onStatusChange={updateVendorStatus} onDocumentReview={reviewDocument} onResetPassword={resetPassword} />}
+      {selected && <VendorRecordDetails vendor={selected} onClose={() => setSelected(null)} onStatusChange={updateVendorStatus} onDocumentReview={reviewDocument} onResetPassword={(vendor) => setConfirmReset(vendor)} />}
     </DashboardShell>
   );
 }
@@ -5405,6 +5515,7 @@ function AdminList() {
     [editor, setEditor] = useState(null),
     [productImageFiles, setProductImageFiles] = useState([]),
     [notice, setNotice] = useState(""),
+    [confirmDelete, setConfirmDelete] = useState(null),
     status = params.get("status") || "";
   const resourceFields = {
     users: [
@@ -5531,12 +5642,12 @@ function AdminList() {
     } catch (error) { setNotice(error.response?.data?.message || error.message); }
   };
   const deleteRecord = async (record) => {
-    if (!window.confirm(`Delete this ${resource.slice(0, -1)}? This cannot be undone.`)) return;
     try {
       const response = await api.delete(`/admin/resources/${resource}/${record._id}`);
       setState((s) => ({ ...s, items: s.items.filter((item) => item._id !== record._id) }));
       setNotice(response.data.message || "Record deleted");
     } catch (error) { setNotice(error.response?.data?.message || error.message); }
+    finally { setConfirmDelete(null); }
   };
   if (state.loading) return <Loading label={`Loading ${resource}…`} />;
   if (state.error) return <ErrorState message={state.error} onRetry={load} />;
@@ -5562,6 +5673,14 @@ function AdminList() {
         </div>
       }
     >
+      <ConfirmationModal
+        isOpen={Boolean(confirmDelete)}
+        title="Delete record"
+        message={`Delete this ${resource.slice(0, -1)}? This cannot be undone.`}
+        confirmText="Delete"
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => deleteRecord(confirmDelete)}
+      />
       {notice && <div className="db-badge info mb-3 d-inline-flex">{notice}</div>}
 
       {/* Editor Modal */}
@@ -5699,7 +5818,7 @@ function AdminList() {
                       <button
                         type="button"
                         className="db-btn db-btn-danger db-btn-sm"
-                        onClick={() => deleteRecord(x)}
+                        onClick={() => setConfirmDelete(x)}
                         title="Delete"
                       >
                         <i className="bi bi-trash" />
@@ -7142,6 +7261,156 @@ function VendorWorkspacePage({ section }) {
   );
 }
 
+const buyerAccountSections = [
+  ["profile", "Buyer Profile", "bi-person"],
+  ["addresses", "My Addresses", "bi-geo-alt"],
+  ["orders", "Orders", "bi-box-seam"],
+  ["wishlist", "Saved Products", "bi-heart"],
+  ["requests", "Product Requests", "bi-send"],
+  ["payments", "Payments", "bi-credit-card"],
+  ["notifications", "Notifications", "bi-bell"],
+  ["security", "Account & Security", "bi-shield-lock"],
+];
+
+function BuyerAccountDashboard() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSection = searchParams.get("section") || "profile";
+  const [activeSection, setActiveSection] = useState(requestedSection);
+  const [state, setState] = useState({ loading: true, profile: null, orders: [], wishlist: [], notifications: [], addresses: [], requests: [], preferences: {}, error: "" });
+
+  useEffect(() => {
+    if (buyerAccountSections.some(([key]) => key === requestedSection)) setActiveSection(requestedSection);
+  }, [requestedSection]);
+
+  useEffect(() => {
+    const loadBuyerAccount = () => {
+      Promise.all([api.get("/account"), api.get("/buyer/wishlist"), api.get("/buyer/notifications"), api.get("/buyer/addresses"), api.get("/buyer/product-requests"), api.get("/buyer/notification-preferences")])
+        .then(([accountResponse, wishlistResponse, notificationResponse, addressResponse, requestResponse, preferenceResponse]) => {
+          const data = accountResponse.data.data || {};
+          setState({
+            loading: false,
+            profile: data.profile || null,
+            orders: data.orders || [],
+            wishlist: wishlistResponse.data.data || [],
+            notifications: notificationResponse.data.data || [],
+            addresses: addressResponse.data.data || [],
+            requests: requestResponse.data.data || [],
+            preferences: preferenceResponse.data.data || {},
+            error: "",
+          });
+        })
+        .catch((error) => setState((current) => ({
+          ...current,
+          loading: false,
+          error: error.response?.data?.message || error.message || "Unable to load your account.",
+        })));
+    };
+    loadBuyerAccount();
+  }, []);
+
+  const section = buyerAccountSections.find(([key]) => key === activeSection) || buyerAccountSections[0];
+  if (state.loading) return <Loading label="Loading your buyer account…" />;
+  if (state.error) return <ErrorState message={state.error} onRetry={() => window.location.reload()} />;
+
+  return (
+    <DashboardShell role="buyer" activeNav={`/buyer/account?section=${activeSection}`} title="Buyer account">
+      <div className="buyer-account-shell">
+        <section className="buyer-account-content">
+          <div className="buyer-account-heading">
+            <div><span className="eyebrow dark">ACCOUNT WORKSPACE</span><h1>{section[1]}</h1><p>Manage your buyer information and marketplace activity in one place.</p></div>
+            <span className="db-badge success"><i className="bi bi-shield-check me-1" />Protected</span>
+          </div>
+          <BuyerAccountSection
+            section={activeSection}
+            profile={state.profile}
+            orders={state.orders}
+            wishlist={state.wishlist}
+            notifications={state.notifications}
+            addresses={state.addresses}
+            requests={state.requests}
+            preferences={state.preferences}
+            onReload={() => window.location.reload()}
+          />
+        </section>
+      </div>
+    </DashboardShell>
+  );
+}
+
+function BuyerAccountSection({ section, profile, orders, wishlist, notifications, addresses, requests, preferences, onReload }) {
+  const content = {
+    profile: ["Personal information", "Your name, contact details, and buyer identity will appear here."],
+    addresses: ["Saved addresses", "Add, edit, remove, and select a default delivery address."],
+    orders: ["Order history", `${orders.length} order${orders.length === 1 ? "" : "s"} available for review.`],
+    wishlist: ["Saved products", `${wishlist.length} product${wishlist.length === 1 ? "" : "s"} saved for later.`],
+    requests: ["Product requests", "Track requested equipment and availability updates."],
+    payments: ["Payments", "Manage masked payment methods and review payment or refund activity."],
+    notifications: ["Notifications", `${notifications.length} notification${notifications.length === 1 ? "" : "s"} available.`],
+    security: ["Account security", "Update your password, sessions, preferences, and account controls."],
+  }[section] || ["Buyer account", "Manage your account from this workspace."];
+  const [form, setForm] = useState(profile || {});
+  const [feedback, setFeedback] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [newAddress, setNewAddress] = useState({ label: "Home", line1: "", city: "", state: "", postalCode: "", country: "India", isDefault: false });
+  useEffect(() => setForm(profile || {}), [profile]);
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const saveProfile = async (event) => {
+    event.preventDefault();
+    setSaving(true); setFeedback("");
+    try {
+      const response = await api.patch(section === "profile" ? "/buyer/profile" : "/account", form);
+      setFeedback(response.data.message || "Profile saved.");
+    } catch (error) {
+      setFeedback(error.response?.data?.message || error.message || "Unable to save profile.");
+    } finally { setSaving(false); }
+  };
+  const cancelOrder = async (order) => {
+    try { await api.patch(`/account/orders/${order._id}/cancel`); onReload(); }
+    catch (error) { setFeedback(error.response?.data?.message || error.message); }
+  };
+  const removeWishlist = async (product) => {
+    try { await api.post(`/buyer/wishlist/${product._id}`); onReload(); }
+    catch (error) { setFeedback(error.response?.data?.message || error.message); }
+  };
+  const cancelRequest = async (request) => {
+    try { await api.patch(`/buyer/product-requests/${request._id}/cancel`); onReload(); }
+    catch (error) { setFeedback(error.response?.data?.message || error.message); }
+  };
+  const updatePreferences = async (key, value) => {
+    try { await api.patch("/buyer/notification-preferences", { [key]: value }); setFeedback("Notification preference saved."); }
+    catch (error) { setFeedback(error.response?.data?.message || error.message); }
+  };
+  const invoice = (order) => {
+    const blob = new Blob([`Industry Mandi invoice\nOrder: ${order.orderNumber}\nTotal: ${fmt(order.total)}\nStatus: ${order.status}`], { type: "text/plain" });
+    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${order.orderNumber || "invoice"}.txt`; link.click(); URL.revokeObjectURL(link.href);
+  };
+  const address = form.businessAddress || {};
+  return (
+    <div className="buyer-account-panel buyer-account-panel-rich">
+      <div className="buyer-account-panel-icon"><i className={`bi ${buyerAccountSections.find(([key]) => key === section)?.[2] || "bi-grid"}`} /></div>
+      <div><h2>{content[0]}</h2><p>{content[1]}</p></div>
+      {feedback && <div className="alert alert-info buyer-account-feedback">{feedback}</div>}
+      {section === "profile" && <form className="buyer-account-form" onSubmit={saveProfile}><input required placeholder="Full name" value={form.name || ""} onChange={(event) => update("name", event.target.value)} /><input disabled placeholder="Email" value={form.email || ""} /><input placeholder="Phone number" value={form.phone || ""} onChange={(event) => update("phone", event.target.value)} /><input type="date" placeholder="Date of birth" value={form.dateOfBirth ? String(form.dateOfBirth).slice(0, 10) : ""} onChange={(event) => update("dateOfBirth", event.target.value)} /><select value={form.gender || ""} onChange={(event) => update("gender", event.target.value)}><option value="">Gender</option><option value="female">Female</option><option value="male">Male</option><option value="non-binary">Non-binary</option><option value="prefer-not-to-say">Prefer not to say</option></select><button className="btn btn-primary" disabled={saving}>{saving ? "Saving…" : "Save profile"}</button></form>}
+      {section === "addresses" && <><form className="buyer-account-form" onSubmit={async (event) => { event.preventDefault(); try { await api.post("/buyer/addresses", newAddress); setNewAddress({ label: "Home", line1: "", city: "", state: "", postalCode: "", country: "India", isDefault: false }); onReload(); } catch (error) { setFeedback(error.response?.data?.message || error.message); } }}><input placeholder="Label (Home / Work)" value={newAddress.label} onChange={(event) => setNewAddress({ ...newAddress, label: event.target.value })} /><input required placeholder="Address line 1" value={newAddress.line1} onChange={(event) => setNewAddress({ ...newAddress, line1: event.target.value })} /><input required placeholder="City" value={newAddress.city} onChange={(event) => setNewAddress({ ...newAddress, city: event.target.value })} /><input required placeholder="State" value={newAddress.state} onChange={(event) => setNewAddress({ ...newAddress, state: event.target.value })} /><input required placeholder="Postal code" value={newAddress.postalCode} onChange={(event) => setNewAddress({ ...newAddress, postalCode: event.target.value })} /><label><input type="checkbox" checked={newAddress.isDefault} onChange={(event) => setNewAddress({ ...newAddress, isDefault: event.target.checked })} /> Set as default</label><button className="btn btn-primary">Add address</button></form><div className="buyer-account-list">{addresses.length ? addresses.map((item) => <div className="buyer-account-list-row" key={item._id}><div><strong>{item.label || "Saved address"} {item.isDefault && <span className="db-badge success ms-2">Default</span>}</strong><small>{[item.line1, item.line2, item.city, item.state, item.postalCode].filter(Boolean).join(", ")}</small></div><button className="btn btn-sm btn-outline-danger" onClick={() => setConfirmAction({ title: "Delete address", message: "Are you sure you want to delete this saved address?", confirmText: "Delete address", action: async () => { try { await api.delete(`/buyer/addresses/${item._id}`); onReload(); } catch (error) { setFeedback(error.response?.data?.message || error.message); } } })}>Delete</button></div>) : <div className="buyer-account-placeholder">No saved addresses yet.</div>}</div></>}
+      {section === "orders" && <div className="buyer-account-list">{orders.length ? orders.map((order) => <div className="buyer-account-list-row" key={order._id}><div><strong>{order.orderNumber || "Order"}</strong><small>{order.items?.length || 0} items · {fmt(order.total)}</small></div><span className="db-badge info">{order.status}</span><div className="buyer-account-row-actions"><button className="btn btn-sm btn-outline-primary" onClick={() => invoice(order)}>Invoice</button>{order.status !== "Cancelled" && order.status !== "Delivered" && <button className="btn btn-sm btn-outline-danger" onClick={() => setConfirmAction({ title: "Cancel order", message: `Are you sure you want to cancel ${order.orderNumber || "this order"}?`, confirmText: "Cancel order", action: () => cancelOrder(order) })}>Cancel</button>}</div></div>) : <div className="buyer-account-placeholder">No orders yet.</div>}</div>}
+      {section === "wishlist" && <div className="buyer-account-list">{wishlist.length ? wishlist.map((product) => <div className="buyer-account-list-row" key={product._id}><div><strong>{product.name}</strong><small>{product.category || "Saved product"}</small></div><span>{fmt(getDisplayPrice(product))}</span><button className="btn btn-sm btn-outline-danger" onClick={() => removeWishlist(product)}>Remove</button></div>) : <div className="buyer-account-placeholder">No saved products.</div>}</div>}
+      {section === "notifications" && <><div className="buyer-account-list">{notifications.length ? notifications.map((notification) => <div className="buyer-account-list-row" key={notification._id}><div><strong>{notification.type || "Account update"}</strong><small>{notification.message}</small></div><small>{new Date(notification.createdAt).toLocaleDateString()}</small></div>) : <div className="buyer-account-placeholder">No notifications.</div>}</div><div className="buyer-account-list">{["orderUpdates", "priceFinder", "promotions", "account"].map((key) => <label className="buyer-account-list-row" key={key}><span>{key === "orderUpdates" ? "Order updates" : key === "priceFinder" ? "Product availability" : key[0].toUpperCase() + key.slice(1)}</span><input type="checkbox" checked={preferences[key] !== false} onChange={(event) => updatePreferences(key, event.target.checked)} /></label>)}</div></>}
+      {section === "requests" && <div className="buyer-account-list">{requests.length ? requests.map((request) => <div className="buyer-account-list-row" key={request._id}><div><strong>{request.productName || request.productDetails?.name || "Product request"}</strong><small>{request.status} · {request.productUrl}</small></div>{request.status === "pending" && <button className="btn btn-sm btn-outline-danger" onClick={() => setConfirmAction({ title: "Cancel product request", message: "Are you sure you want to cancel this product request?", confirmText: "Cancel request", action: () => cancelRequest(request) })}>Cancel</button>}</div>) : <div className="buyer-account-placeholder">No product requests yet.</div>}</div>}
+      {section === "payments" && <div className="buyer-account-placeholder">No saved payment methods or payment history is available for this buyer account.</div>}
+      {section === "security" && <div className="buyer-account-placeholder"><strong>Account security</strong><br />Password changes remain available in the existing account security flow.<br /><button className="btn btn-outline-danger mt-3" onClick={() => setConfirmAction({ title: "Deactivate buyer account", message: "This will deactivate your buyer account. Continue?", confirmText: "Deactivate account", action: async () => { try { await api.post("/buyer/account/deactivate"); localStorage.removeItem("token"); localStorage.removeItem("user"); window.location.href = "/"; } catch (error) { setFeedback(error.response?.data?.message || error.message); } } })}>Deactivate account</button></div>}
+      <ConfirmationModal
+        isOpen={Boolean(confirmAction)}
+        title={confirmAction?.title}
+        message={confirmAction?.message}
+        confirmText={confirmAction?.confirmText}
+        onCancel={() => setConfirmAction(null)}
+        onConfirm={async () => { const action = confirmAction?.action; setConfirmAction(null); if (action) await action(); }}
+      />
+    </div>
+  );
+}
+
 function Account() {
   const { user, logout } = useAuth();
   const [tab, setTab] = useState("overview");
@@ -7305,10 +7574,7 @@ function App() {
     <Auth.Provider value={{ user, login, logout, updateUser }}>
       <BrowserRouter>
         <SmoothScrollEffects />
-        <Header />
-        <CartDrawer />
-        <CompareQueue />
-        <a className="whatsapp-float" href="https://wa.me/917903553221" target="_blank" rel="noreferrer" aria-label="Chat with us on WhatsApp"><i className="bi bi-whatsapp" /></a>
+        <PublicChrome />
         <RouteBoundary>
           <Routes>
             <Route path="/" element={<Home />} />
@@ -7321,6 +7587,7 @@ function App() {
             <Route path="/login" element={<AuthPage />} />
             <Route path="/register" element={<AuthPage register />} />
             <Route path="/cart" element={<CartPage />} />
+            <Route path="/buyer/account" element={<Protected roles={["buyer"]}><BuyerAccountDashboard /></Protected>} />
             <Route path="/account" element={<Protected roles={["buyer", "vendor"]}><Account /></Protected>} />
             <Route
               path="/wishlist"
@@ -7471,6 +7738,28 @@ function App() {
         </RouteBoundary>
       </BrowserRouter>
     </Auth.Provider>
+  );
+}
+
+function PublicChrome() {
+  const location = useLocation();
+  const dashboardRoute = [
+    "/admin",
+    "/vendor",
+    "/account",
+    "/buyer/account",
+    "/dashboard/buyer",
+  ].some((prefix) => location.pathname === prefix || location.pathname.startsWith(`${prefix}/`));
+
+  if (dashboardRoute) return null;
+
+  return (
+    <>
+      <Header />
+      <CartDrawer />
+      <CompareQueue />
+      <a className="whatsapp-float" href="https://wa.me/917903553221" target="_blank" rel="noreferrer" aria-label="Chat with us on WhatsApp"><i className="bi bi-whatsapp" /></a>
+    </>
   );
 }
 createRoot(document.getElementById("root")).render(<App />);
