@@ -8,7 +8,7 @@ import * as admin from "../controllers/adminController.js";
 import * as buyer from "../controllers/buyerController.js";
 import * as account from "../controllers/accountController.js";
 import * as order from "../controllers/orderController.js";
-import { protect, allow } from "../middleware/auth.js";
+import { protect, optionalProtect, allow } from "../middleware/auth.js";
 import { asyncHandler as ah } from "../middleware/asyncHandler.js";
 import { productImages } from "../middleware/upload.js";
 import * as priceFinder from "../controllers/priceFinderController.js";
@@ -109,6 +109,7 @@ r.get("/products/:slug", ah(products.detail));
 
 // Price Finder (public — no auth required)
 r.post("/price-finder", ah(priceFinder.findByUrl));
+r.post("/price-finder/requests", optionalProtect, ah(priceFinder.requestProduct));
 
 // Product creation (admin or vendor — upload rate-limited)
 r.post(

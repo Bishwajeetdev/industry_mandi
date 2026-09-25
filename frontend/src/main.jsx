@@ -1,3 +1,104 @@
+import React, { createContext, useContext, useEffect, useLayoutEffect, useState, useMemo } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+  useLocation,
+  Navigate,
+} from "react-router-dom";
+import axios from "axios";
+import gsap from "gsap";
+import { ScrollToPlugin } from "gsap/ScrollToPlugin";
+import "bootstrap/dist/css/bootstrap.min.css";
+import "bootstrap-icons/font/bootstrap-icons.css";
+import "./styles.css";
+import industrialPlantHero from "./assets/industrial-plant-hero.jpg";
+gsap.registerPlugin(ScrollToPlugin);
+const resolveApiUrl = (envUrl) => {
+  if (envUrl && envUrl.trim()) {
+    let url = envUrl.trim();
+    if (!/^https?:\/\//i.test(url)) {
+      url = `https://${url}`;
+    }
+    url = url.replace(/\/+$/, "");
+    return url.endsWith("/api") ? url : `${url}/api`;
+  }
+  if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
+    return "http://localhost:5000/api";
+  }
+  return "https://industry-mandi01.onrender.com/api";
+};
+
+const api = axios.create({
+  baseURL: resolveApiUrl(import.meta.env.VITE_API_URL),
+}),
+  Auth = createContext(null),
+  useAuth = () => useContext(Auth),
+  fmt = (n) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(n || 0);
+const getDisplayPrice = (product) => {
+  const listedPrice = Number(product?.price || product?.offerPrice || product?.salePrice);
+  if (listedPrice > 0) return listedPrice;
+  const str = String(product?.name || product?._id || product?.slug || "industrial-equipment");
+  const seed = [...str].reduce((total, character, i) => total + character.charCodeAt(0) * (i + 1), 0);
+  const cat = String(product?.category || "").toLowerCase();
+  if (cat.includes("cnc") || cat.includes("machin")) {
+    return 1450000 + (seed % 15) * 85000;
+  } else if (cat.includes("switchgear") || cat.includes("power") || cat.includes("starter")) {
+    return 135000 + (seed % 10) * 15000;
+  } else if (cat.includes("vfd") || cat.includes("automation") || cat.includes("drive")) {
+    return 62000 + (seed % 12) * 4500;
+  } else if (cat.includes("pump")) {
+    return 42500 + (seed % 8) * 3500;
+  }
+  return 48500 + (seed % 14) * 4200;
+};
+api.interceptors.request.use((c) => {
+  const t = localStorage.getItem("token");
+  if (t) c.headers.Authorization = `Bearer ${t}`;
+  return c;
+});
+const notifyWishlistChanged = (items) => window.dispatchEvent(new CustomEvent("wishlist-updated", { detail: { count: Array.isArray(items) ? items.length : undefined } }));
+const notifyCartChanged = () => window.dispatchEvent(new Event("cart-updated"));
+const addToCompareQueue = (product) => {
+  if (!product) return [];
+  const compared = JSON.parse(localStorage.getItem("compareProducts") || "[]");
+  if (compared.length > 0 && compared[0]?.category && product.category) {
+    if (compared[0].category.trim().toLowerCase() !== product.category.trim().toLowerCase()) {
+      alert(`Cannot compare products from different categories. All compared products must belong to "${compared[0].category}".`);
+      return compared;
+    }
+  }
+  const sameCategory = compared.filter(
+    (item) => !item.category || !product.category || item.category.trim().toLowerCase() === product.category.trim().toLowerCase()
+  );
+  const next = sameCategory.some((item) => String(item._id) === String(product._id))
+    ? sameCategory
+    : [...sameCategory, product].slice(0, 4);
+  localStorage.setItem("compareProducts", JSON.stringify(next));
+  window.dispatchEvent(new CustomEvent("compare-updated", { detail: { products: next } }));
+  return next;
+};
+const removeFromCompareQueue = (productId) => {
+  try {
+    const compared = JSON.parse(localStorage.getItem("compareProducts") || "[]");
+    const next = compared.filter((item) => String(item._id) !== String(productId));
+    localStorage.setItem("compareProducts", JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent("compare-updated", { detail: { products: next } }));
+    return next;
+  } catch {
+    return [];
+  }
+};
 function AdminModuleHub() {
   return (
     <main className="container py-5">
@@ -118,96 +219,6 @@ function AdminSettingsPage() {
     </main>
   );
 }
-import React, { createContext, useContext, useEffect, useLayoutEffect, useState, useMemo } from "react";
-import { createRoot } from "react-dom/client";
-import {
-  BrowserRouter,
-  Routes,
-  Route,
-  Link,
-  useNavigate,
-  useParams,
-  useSearchParams,
-  useLocation,
-  Navigate,
-} from "react-router-dom";
-import axios from "axios";
-import gsap from "gsap";
-import { ScrollToPlugin } from "gsap/ScrollToPlugin";
-import "bootstrap/dist/css/bootstrap.min.css";
-import "bootstrap-icons/font/bootstrap-icons.css";
-import "./styles.css";
-import industrialPlantHero from "./assets/industrial-plant-hero.jpg";
-gsap.registerPlugin(ScrollToPlugin);
-const resolveApiUrl = (envUrl) => {
-  if (envUrl && envUrl.trim()) {
-    let url = envUrl.trim();
-    if (!/^https?:\/\//i.test(url)) {
-      url = `https://${url}`;
-    }
-    url = url.replace(/\/+$/, "");
-    return url.endsWith("/api") ? url : `${url}/api`;
-  }
-  if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
-    return "http://localhost:5000/api";
-  }
-  return "https://industry-mandi01.onrender.com/api";
-};
-
-const api = axios.create({
-  baseURL: resolveApiUrl(import.meta.env.VITE_API_URL),
-}),
-  Auth = createContext(null),
-  useAuth = () => useContext(Auth),
-  fmt = (n) =>
-    new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(n || 0);
-const getDisplayPrice = (product) => {
-  const listedPrice = Number(product?.price || product?.offerPrice || product?.salePrice);
-  if (listedPrice > 0) return listedPrice;
-  const str = String(product?.name || product?._id || product?.slug || "industrial-equipment");
-  const seed = [...str].reduce((total, character, i) => total + character.charCodeAt(0) * (i + 1), 0);
-  const cat = String(product?.category || "").toLowerCase();
-  if (cat.includes("cnc") || cat.includes("machin")) {
-    return 1450000 + (seed % 15) * 85000;
-  } else if (cat.includes("switchgear") || cat.includes("power") || cat.includes("starter")) {
-    return 135000 + (seed % 10) * 15000;
-  } else if (cat.includes("vfd") || cat.includes("automation") || cat.includes("drive")) {
-    return 62000 + (seed % 12) * 4500;
-  } else if (cat.includes("pump")) {
-    return 42500 + (seed % 8) * 3500;
-  }
-  return 48500 + (seed % 14) * 4200;
-};
-api.interceptors.request.use((c) => {
-  const t = localStorage.getItem("token");
-  if (t) c.headers.Authorization = `Bearer ${t}`;
-  return c;
-});
-const notifyWishlistChanged = (items) => window.dispatchEvent(new CustomEvent("wishlist-updated", { detail: { count: Array.isArray(items) ? items.length : undefined } }));
-const notifyCartChanged = () => window.dispatchEvent(new Event("cart-updated"));
-const addToCompareQueue = (product) => {
-  const compared = JSON.parse(localStorage.getItem("compareProducts") || "[]");
-  const sameCategory = compared.filter((item) => item.category === product.category);
-  const next = sameCategory.some((item) => item._id === product._id) ? sameCategory : [...sameCategory, product].slice(0, 4);
-  localStorage.setItem("compareProducts", JSON.stringify(next));
-  window.dispatchEvent(new CustomEvent("compare-updated", { detail: { products: next } }));
-  return next;
-};
-const removeFromCompareQueue = (productId) => {
-  try {
-    const compared = JSON.parse(localStorage.getItem("compareProducts") || "[]");
-    const next = compared.filter((item) => String(item._id) !== String(productId));
-    localStorage.setItem("compareProducts", JSON.stringify(next));
-    window.dispatchEvent(new CustomEvent("compare-updated", { detail: { products: next } }));
-    return next;
-  } catch {
-    return [];
-  }
-};
 function Loading({ label = "Loading…" }) {
   return (
     <main className="container py-5 text-secondary">
@@ -236,17 +247,82 @@ function ErrorState({ message, onRetry }) {
   );
 }
 function Header() {
-  const { user, logout } = useAuth(),
+  const { user, login, logout } = useAuth(),
     navigate = useNavigate(),
     [wishlistCount, setWishlistCount] = useState(0),
+    [cartCount, setCartCount] = useState(0),
     [searchQuery, setSearchQuery] = useState(""),
     [menuOpen, setMenuOpen] = useState(false),
+    [showSignInModal, setShowSignInModal] = useState(null),
+    [signInForm, setSignInForm] = useState({ email: "", password: "" }),
+    [signInLoading, setSignInLoading] = useState(false),
+    [signInError, setSignInError] = useState(""),
+    [showPassword, setShowPassword] = useState(false),
     dash =
       user?.role === "admin"
         ? "/admin"
         : user?.role === "vendor"
           ? "/vendor"
           : "/account";
+
+  useEffect(() => {
+    const loadCartCount = () => {
+      try {
+        const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+        const count = cart.reduce((total, item) => total + (item.quantity || 1), 0);
+        setCartCount(count);
+      } catch {
+        setCartCount(0);
+      }
+    };
+    loadCartCount();
+    window.addEventListener("cart-updated", loadCartCount);
+    return () => window.removeEventListener("cart-updated", loadCartCount);
+  }, []);
+
+  const handleWishlistClick = (e) => {
+    e.preventDefault();
+    setMenuOpen(false);
+    if (!user) {
+      setSignInError("");
+      setShowSignInModal("wishlist");
+    } else {
+      navigate("/wishlist");
+    }
+  };
+
+  const handleCartClick = (e) => {
+    e.preventDefault();
+    setMenuOpen(false);
+    if (!user) {
+      setSignInError("");
+      setShowSignInModal("cart");
+    } else {
+      navigate("/cart");
+    }
+  };
+
+  const handleSignInSubmit = async (e) => {
+    e.preventDefault();
+    setSignInLoading(true);
+    setSignInError("");
+    try {
+      const r = await api.post("/auth/login", signInForm);
+      login(r.data.data);
+      const dest = showSignInModal === "wishlist" ? "/wishlist" : "/cart";
+      setShowSignInModal(null);
+      setSignInForm({ email: "", password: "" });
+      navigate(dest);
+    } catch (err) {
+      setSignInError(
+        err.response?.data?.message ||
+        "Invalid email or password. Please verify your credentials."
+      );
+    } finally {
+      setSignInLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (user?.role === "buyer") {
       const loadWishlistCount = () =>
@@ -312,9 +388,27 @@ function Header() {
             <Link to="/about" className="nav-link header-utility" onClick={() => setMenuOpen(false)}>About</Link>
             <Link to="/contact" className="nav-link header-utility" onClick={() => setMenuOpen(false)}>Contact us</Link>
             {!user && <Link to="/register?role=vendor" className="nav-link header-utility" onClick={() => setMenuOpen(false)}>Become a seller</Link>}
-            {user?.role === "buyer" && <>
-              <Link to="/wishlist" className="nav-link header-icon wishlist-nav-icon" onClick={() => setMenuOpen(false)} aria-label={`Wishlist (${wishlistCount} saved)`}><i className="bi bi-heart" />{wishlistCount > 0 && <span className="wishlist-count">{wishlistCount > 99 ? "99+" : wishlistCount}</span>}</Link>
-              <Link to="/cart" className="nav-link header-icon" onClick={() => setMenuOpen(false)} aria-label="Cart"><i className="bi bi-bag" /></Link>
+            {(!user || user?.role === "buyer") && <>
+              <button
+                type="button"
+                className="nav-link header-icon wishlist-nav-icon"
+                onClick={handleWishlistClick}
+                aria-label={`Wishlist (${wishlistCount} saved)`}
+                title="Wishlist"
+              >
+                <i className="bi bi-heart" />
+                {wishlistCount > 0 && <span className="wishlist-count">{wishlistCount > 99 ? "99+" : wishlistCount}</span>}
+              </button>
+              <button
+                type="button"
+                className="nav-link header-icon"
+                onClick={handleCartClick}
+                aria-label={`Cart (${cartCount} items)`}
+                title="Cart"
+              >
+                <i className="bi bi-bag" />
+                {cartCount > 0 && <span className="wishlist-count">{cartCount > 99 ? "99+" : cartCount}</span>}
+              </button>
             </>}
             {user ? (
               <>
@@ -341,6 +435,149 @@ function Header() {
           </div>
         </div>
       </nav>
+
+      {showSignInModal && (
+        <div
+          className="compare-modal-backdrop"
+          style={{ zIndex: 2300 }}
+          onClick={() => {
+            setShowSignInModal(null);
+            setSignInError("");
+          }}
+        >
+          <div
+            className="compare-modal-content cart-auth-modal"
+            style={{ maxWidth: 440 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="compare-modal-header border-bottom">
+              <div>
+                <span className="eyebrow dark">AUTHENTICATION REQUIRED</span>
+                <h3 className="h5 mb-0 d-flex align-items-center gap-2">
+                  <i
+                    className={`bi ${
+                      showSignInModal === "wishlist"
+                        ? "bi-heart text-danger"
+                        : "bi-bag text-primary"
+                    }`}
+                  />
+                  {showSignInModal === "wishlist"
+                    ? "Sign In to Access Wishlist"
+                    : "Sign In to Access Cart"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="btn-modal-close"
+                onClick={() => {
+                  setShowSignInModal(null);
+                  setSignInError("");
+                }}
+                aria-label="Close"
+              >
+                <i className="bi bi-x-lg" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              <p className="text-secondary small mb-3">
+                {showSignInModal === "wishlist"
+                  ? "Please sign in to view and manage your saved machinery and procurement wishlist."
+                  : "Please sign in to view your procurement cart and proceed with direct OEM orders."}
+              </p>
+
+              {signInError && (
+                <div className="alert alert-danger py-2 small mb-3">
+                  <i className="bi bi-exclamation-circle me-1" /> {signInError}
+                </div>
+              )}
+
+              <form onSubmit={handleSignInSubmit}>
+                <div className="mb-3">
+                  <label className="form-label small fw-semibold text-secondary mb-1">
+                    Work Email
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    className="form-control"
+                    placeholder="buyer@company.com"
+                    value={signInForm.email}
+                    onChange={(e) =>
+                      setSignInForm({ ...signInForm, email: e.target.value })
+                    }
+                    autoFocus
+                  />
+                </div>
+
+                <div className="mb-3">
+                  <div className="d-flex justify-content-between">
+                    <label className="form-label small fw-semibold text-secondary mb-1">
+                      Password
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-link p-0 text-decoration-none small text-secondary"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    className="form-control"
+                    placeholder="••••••••"
+                    value={signInForm.password}
+                    onChange={(e) =>
+                      setSignInForm({ ...signInForm, password: e.target.value })
+                    }
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="btn btn-primary w-100 mb-2"
+                  disabled={signInLoading}
+                >
+                  {signInLoading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" />
+                      Signing In…
+                    </>
+                  ) : (
+                    <>
+                      <i className="bi bi-box-arrow-in-right me-1" /> Sign In
+                    </>
+                  )}
+                </button>
+
+                <div className="d-flex align-items-center my-3">
+                  <hr className="flex-grow-1 m-0 text-secondary" />
+                  <span className="px-2 text-secondary small">or</span>
+                  <hr className="flex-grow-1 m-0 text-secondary" />
+                </div>
+
+                <div className="text-center small text-secondary">
+                  Don’t have an account yet?{" "}
+                  <Link
+                    to={`/register?role=buyer&redirect=${encodeURIComponent(
+                      showSignInModal === "wishlist" ? "/wishlist" : "/cart"
+                    )}`}
+                    className="text-primary text-decoration-none fw-semibold"
+                    onClick={() => {
+                      setShowSignInModal(null);
+                      setMenuOpen(false);
+                    }}
+                  >
+                    Register as Buyer
+                  </Link>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -424,6 +661,7 @@ function CompareQueue() {
     }
     return combined.filter((p) => {
       if (currentIds.includes(String(p._id))) return false;
+      if (currentCategory && p.category && p.category.trim().toLowerCase() !== currentCategory.trim().toLowerCase()) return false;
       if (!pickerSearch.trim()) return true;
       const term = pickerSearch.toLowerCase();
       return (
@@ -437,9 +675,11 @@ function CompareQueue() {
 
   const handleAddProduct = (item) => {
     const next = addToCompareQueue(item);
-    setProducts(next);
-    if (next.length >= 4) {
-      setShowPicker(false);
+    if (next) {
+      setProducts(next);
+      if (next.length >= 4) {
+        setShowPicker(false);
+      }
     }
   };
 
@@ -839,8 +1079,10 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
     if (onToggle) {
       onToggle(product);
     } else {
-      addToCompareQueue(product);
-      setIsComparing(true);
+      const next = addToCompareQueue(product);
+      if (next && next.some((p) => String(p._id) === String(product._id))) {
+        setIsComparing(true);
+      }
     }
   };
 
@@ -2125,8 +2367,10 @@ function Product() {
       removeFromCompareQueue(product._id);
       setWishMessage("Removed from comparison queue.");
     } else {
-      addToCompareQueue(product);
-      setWishMessage("Added to comparison queue.");
+      const next = addToCompareQueue(product);
+      if (next && next.some((p) => String(p._id) === String(product._id))) {
+        setWishMessage("Added to comparison queue.");
+      }
     }
   };
 
@@ -2599,8 +2843,10 @@ function RecommendationCard({ product, reason, fallback }) {
       removeFromCompareQueue(product._id);
       setIsCompared(false);
     } else {
-      addToCompareQueue(product);
-      setIsCompared(true);
+      const next = addToCompareQueue(product);
+      if (next && next.some((p) => String(p._id) === String(product._id))) {
+        setIsCompared(true);
+      }
     }
   };
 
@@ -2977,9 +3223,20 @@ function Compare() {
         }
         setState({ loading: false, data, error: "" });
       })
-      .catch(() => {
+      .catch((err) => {
+        if (err.response?.status === 422) {
+          setState({ loading: false, data: null, error: err.response?.data?.message || "Compare products from the same category only" });
+          return;
+        }
         const savedProducts = JSON.parse(localStorage.getItem("compareProducts") || "[]");
         const fallbackData = buildFallbackCompareData(ids, savedProducts);
+        if (fallbackData?.results?.length > 1) {
+          const cats = new Set(fallbackData.results.map((r) => r.product?.category).filter(Boolean));
+          if (cats.size > 1) {
+            setState({ loading: false, data: null, error: "Compare products from the same category only" });
+            return;
+          }
+        }
         setState({ loading: false, data: fallbackData, error: "" });
       });
   };
@@ -3020,6 +3277,11 @@ function Compare() {
   const addMachine = (product) => {
     const idList = ids.split(",").filter(Boolean);
     if (idList.length >= 4) return;
+    const currentCat = state.data?.results?.[0]?.product?.category;
+    if (currentCat && product?.category && currentCat.trim().toLowerCase() !== product.category.trim().toLowerCase()) {
+      alert(`Cannot compare products from different categories. All compared products must belong to "${currentCat}".`);
+      return;
+    }
     if (!idList.includes(product._id)) {
       const nextIds = [...idList, product._id];
       setParams({ ids: nextIds.join(",") });
@@ -3190,16 +3452,20 @@ function Compare() {
   // Available items for the quick picker modal
   const availablePickerProducts = useMemo(() => {
     const currentIds = ids.split(",").filter(Boolean);
+    const cat = state.data?.results?.[0]?.product?.category;
     const combined = [...pickerApiProducts];
     if (typeof INDUSTRIAL_CATALOG !== "undefined" && Array.isArray(INDUSTRIAL_CATALOG)) {
       INDUSTRIAL_CATALOG.forEach((item) => {
         if (!combined.some((p) => String(p._id) === String(item._id) || p.name === item.name)) {
-          combined.push(item);
+          if (!cat || (item.category && item.category.trim().toLowerCase() === cat.trim().toLowerCase())) {
+            combined.push(item);
+          }
         }
       });
     }
     return combined.filter((p) => {
       if (currentIds.includes(String(p._id))) return false;
+      if (cat && p.category && p.category.trim().toLowerCase() !== cat.trim().toLowerCase()) return false;
       if (!pickerSearch.trim()) return true;
       const term = pickerSearch.toLowerCase();
       return (
@@ -3209,7 +3475,7 @@ function Compare() {
         (p.model && p.model.toLowerCase().includes(term))
       );
     });
-  }, [ids, pickerSearch, pickerApiProducts]);
+  }, [ids, pickerSearch, pickerApiProducts, state.data]);
 
   // Empty state catalog list
   const emptyCatalogItems = useMemo(() => {
@@ -3226,6 +3492,15 @@ function Compare() {
     setEmptySelected((prev) => {
       if (prev.includes(productId)) return prev.filter((id) => id !== productId);
       if (prev.length >= 4) return prev;
+      if (prev.length > 0) {
+        const firstItem = INDUSTRIAL_CATALOG.find((p) => String(p._id) === String(prev[0]));
+        const currentItem = INDUSTRIAL_CATALOG.find((p) => String(p._id) === String(productId));
+        if (firstItem?.category && currentItem?.category &&
+            firstItem.category.trim().toLowerCase() !== currentItem.category.trim().toLowerCase()) {
+          alert(`Cannot compare products from different categories. First selected category is "${firstItem.category}".`);
+          return prev;
+        }
+      }
       return [...prev, productId];
     });
   };
@@ -6546,12 +6821,66 @@ function PfMatchedCard({ product }) {
   );
 }
 
+function PfSubmittedProductDetails({ data, url }) {
+  const extracted = data?.extracted || {};
+  const specs = Object.entries(extracted.specifications || {}).slice(0, 8);
+  const submittedUrl = data?.submittedUrl || url;
+  return (
+    <div className="dashboard-panel mb-4">
+      <div className="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+        <div>
+          <span className="eyebrow dark">SUBMITTED PRODUCT LINK</span>
+          <h3 className="mb-1">{extracted.name || "Product details from submitted URL"}</h3>
+          <p className="small text-secondary mb-2">{extracted.brand || extracted.model || extracted.category || "Details inferred from the submitted link"}</p>
+        </div>
+        <a className="btn btn-outline-primary btn-sm" href={submittedUrl} target="_blank" rel="noreferrer">
+          <i className="bi bi-box-arrow-up-right me-1" /> Open pasted link
+        </a>
+      </div>
+      <div className="small text-break text-secondary mb-3">{submittedUrl}</div>
+      <div className="row g-2 small">
+        {[
+          ["Domain", (() => { try { return new URL(submittedUrl).hostname; } catch { return "—"; } })()],
+          ["Brand", extracted.brand],
+          ["Model", extracted.model],
+          ["SKU", extracted.sku],
+          ["GTIN", extracted.gtin],
+          ["Category", extracted.category],
+          ["Variant", extracted.variant],
+          ["Capacity", extracted.capacity],
+        ].filter(([, value]) => value).map(([label, value]) => (
+          <div className="col-sm-6 col-lg-3" key={label}>
+            <div className="border rounded p-2 h-100"><strong>{label}</strong><div className="text-secondary text-break">{value}</div></div>
+          </div>
+        ))}
+      </div>
+      {extracted.keywords?.length > 0 && (
+        <div className="mt-3">
+          <strong className="small">Detected keywords</strong>
+          <div className="product-spec-chips mt-1">
+            {extracted.keywords.slice(0, 20).map((keyword) => <span className="spec-chip" key={keyword}>{keyword}</span>)}
+          </div>
+        </div>
+      )}
+      {specs.length > 0 && (
+        <div className="mt-3">
+          <strong className="small">Extracted specifications</strong>
+          <div className="product-spec-chips mt-1">
+            {specs.map(([key, value]) => <span className="spec-chip" key={key}>{key}: {String(value)}</span>)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PriceFinder() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [url, setUrl] = useState(searchParams.get("url") || "");
   const [detectedPlatform, setDetectedPlatform] = useState(null);
   const [state, setState] = useState({ loading: false, error: "", data: null });
+  const [requestState, setRequestState] = useState({ saving: false, message: "", error: "" });
 
   // Detect platform as user types
   useEffect(() => {
@@ -6570,6 +6899,17 @@ function PriceFinder() {
     }
   };
 
+  const requestProduct = async () => {
+    if (!state.data?.extracted) return;
+    setRequestState({ saving: true, message: "", error: "" });
+    try {
+      const response = await api.post("/price-finder/requests", { url: url.trim(), extracted: state.data.extracted });
+      setRequestState({ saving: false, message: response.data.message || "Product request submitted.", error: "" });
+    } catch (err) {
+      setRequestState({ saving: false, message: "", error: err.response?.data?.message || "Could not submit the request." });
+    }
+  };
+
   const hasExternal = state.data?.offers?.some((o) => o.fetch_required);
   const internalOffers = state.data?.offers?.filter((o) => !o.fetch_required) || [];
   const externalOffers = state.data?.offers?.filter((o) => o.fetch_required) || [];
@@ -6584,10 +6924,10 @@ function PriceFinder() {
         {/* Hero / Input */}
         <section className="pf-hero">
           <span className="eyebrow dark">PRICE INTELLIGENCE</span>
-          <h1>Paste a Product Link · Find Best Price</h1>
+          <h1>Paste a Product Link · Find a Product</h1>
           <p>
             Paste any industrial product URL from Amazon, Flipkart, IndiaMART, Moglix, and more.
-            We match it against our catalog and show all available prices in one unified table.
+            We extract product details, check for an exact catalog product, then suggest relevant alternatives.
           </p>
 
           <form onSubmit={search}>
@@ -6606,7 +6946,7 @@ function PriceFinder() {
                 required
               />
               <button type="submit" disabled={state.loading}>
-                {state.loading ? <><i className="bi bi-arrow-repeat spin me-1" />Searching…</> : <><i className="bi bi-search me-1" />Find Price</>}
+                {state.loading ? <><i className="bi bi-arrow-repeat spin me-1" />Matching…</> : <><i className="bi bi-search me-1" />Find Product</>}
               </button>
             </div>
           </form>
@@ -6645,22 +6985,29 @@ function PriceFinder() {
         {state.data && !state.loading && (
           <div className="pf-results">
 
-            {/* Matched product */}
-            {state.data.matched ? (
+            <PfSubmittedProductDetails data={state.data} url={url} />
+            {state.data.extractionStatus === "failed" ? (
+              <div className="pf-no-match">
+                <i className="bi bi-cloud-slash" />
+                <h3>Unable to retrieve product information</h3>
+                <p>{state.data.extractionError?.message || "Unable to retrieve product information from this URL."}</p>
+              </div>
+            ) : state.data.matched ? (
               <PfMatchedCard product={state.data.matched} />
             ) : (
               <div className="pf-no-match">
                 <i className="bi bi-search" />
-                <h3>No exact product match found</h3>
+                <h3>{state.data.matchType === "similar" ? "Exact product not found" : "No exact product found in our catalog"}</h3>
                 <p>
-                  We couldn't find an exact match in our catalog for this URL.
-                  {state.data.similar?.length > 0 ? " Here are the closest products we found:" : " Try searching directly in our product catalog."}
+                  {state.data.matchType === "similar" ? "These are similar products, not exact matches." : "The product was extracted successfully, but no exact catalog match was found."}
                 </p>
-                {!state.data.similar?.length && (
-                  <Link to="/products" className="btn btn-primary mt-3">
-                    <i className="bi bi-grid me-2" />Browse Catalog
-                  </Link>
-                )}
+                {state.data.extractionWarning && <p className="small text-warning mb-3">{state.data.extractionWarning}</p>}
+                {state.data.matchType === "none" && (requestState.message ? <div className="alert alert-success mb-0">{requestState.message}</div> : <>
+                  {requestState.error && <div className="alert alert-danger">{requestState.error}</div>}
+                  <button type="button" className="btn btn-primary mt-2" disabled={requestState.saving} onClick={requestProduct}>
+                    {requestState.saving ? "Submitting…" : <><i className="bi bi-plus-circle me-2" />Request This Product</>}
+                  </button>
+                </>)}
               </div>
             )}
 
@@ -6755,12 +7102,13 @@ function PriceFinder() {
               <div>
                 <div className="d-flex align-items-center justify-content-between mb-3">
                   <div>
-                    <span className="eyebrow dark d-block">CLOSEST MATCHES</span>
-                    <h3 className="mt-1 mb-0">Similar Products in Our Catalog</h3>
+                    <span className="eyebrow dark d-block">RELATED PRODUCTS</span>
+                    <h3 className="mt-1 mb-0">
+                      {state.data.extracted?.category
+                        ? `More ${state.data.extracted.category} products`
+                        : "More matching products"}
+                    </h3>
                   </div>
-                  <Link to="/products" className="btn btn-outline-primary btn-sm">
-                    View all <i className="bi bi-arrow-right ms-1" />
-                  </Link>
                 </div>
                 <div className="pf-similar-grid">
                   {state.data.similar.map((p) => {
@@ -6796,6 +7144,7 @@ function PriceFinder() {
                             <div className="product-brand-tag mb-1"><span>{p.brand}</span><span className="verified-dot">✓</span></div>
                             <div style={{ fontWeight: 700, fontSize: "0.88rem", color: "var(--text-main)", marginBottom: 4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{p.name}</div>
                             <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{p.category}</div>
+                            <div style={{ fontSize: "0.72rem", color: "var(--primary)", marginTop: 4, fontWeight: 600 }}>{p.confidence}% relevance</div>
                             {p.price > 0 && <div style={{ fontWeight: 800, color: "#22c55e", marginTop: 6 }}>{fmtPrice(p.price)}</div>}
                             <div style={{ fontSize: "0.72rem", color: "var(--primary)", marginTop: 6, fontWeight: 600 }}>Select this product <i className="bi bi-arrow-right" /></div>
                           </div>

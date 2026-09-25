@@ -23,6 +23,12 @@ const schema = new mongoose.Schema(
     brand: { type: String, index: true },
     model: { type: String, index: true },
     sku: { type: String, index: true, unique: true, sparse: true, uppercase: true, trim: true },
+    // Manufacturer identifiers and purchasable attributes used by Product Link matching.
+    // They are optional so existing catalog records remain valid.
+    gtin: { type: String, index: true, sparse: true, trim: true },
+    variant: { type: String, trim: true },
+    color: { type: String, trim: true },
+    capacity: { type: String, trim: true },
     category: { type: String, required: true, index: true },
     subcategory: String,
     description: String,
@@ -76,5 +82,5 @@ const schema = new mongoose.Schema(
   },
   { timestamps: true },
 );
-schema.index({ name: "text", brand: "text", model: "text", category: "text" });
+schema.index({ name: "text", brand: "text", model: "text", category: "text", variant: "text", color: "text", capacity: "text" });
 export default mongoose.model("Product", schema);

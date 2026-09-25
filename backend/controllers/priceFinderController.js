@@ -1,378 +1,200 @@
-/**
- * Price Finder Controller
- *
- * Workflow:
- * 1. Receive a product URL from the user
- * 2. Detect the platform and extract product identifiers (model, brand, SKU, GTIN, name)
- * 3. Search our MongoDB for an exact match, then a fuzzy match
- * 4. Aggregate all approved vendor offers for the matched product
- * 5. Generate external price rows (from permitted affiliate APIs / product feeds)
- *    NOTE: Where live external APIs require approved keys (Amazon PA-API, Flipkart
- *    Affiliate API, IndiaMART API), we return clearly-labeled indicative rows with
- *    "fetch_required" flag so the UI can display them with a disclaimer.
- *    Real API integrations should be plugged in here once credentials are obtained.
- * 6. Sort everything by lowest valid price
- */
-
 import Product from "../models/Product.js";
-import VendorOffer from "../models/VendorOffer.js";
+import ProductRequest from "../models/ProductRequest.js";
+import { extractProductFromUrl, normalizeExtractedProduct, parseProductUrl, ProductExtractionError } from "../services/productExtractionService.js";
 
-// ─── Platform Detector ────────────────────────────────────────────────────────
+const published = { status: { $in: ["published", "approved"] } };
+const esc = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const norm = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const tokens = (value) => String(value || "").toLowerCase().match(/[a-z0-9]+(?:[.-][a-z0-9]+)*/g) || [];
+const mapObject = (value) => Object.fromEntries(value instanceof Map ? value : Object.entries(value || {}));
+const asText = (product) => [product.name, product.brand, product.model, product.category, product.variant, product.color, product.capacity, ...Object.values(product.specifications || {})].join(" ");
+const normalizedText = (value) => norm(value).replace(/^the/, "");
+function toPublic(product, confidence) { return { _id: product._id, slug: product.slug, name: product.name, brand: product.brand, model: product.model, sku: product.sku, gtin: product.gtin, category: product.category, variant: product.variant, color: product.color, capacity: product.capacity, price: product.price, specifications: mapObject(product.specifications), technicalSpecifications: mapObject(product.technicalSpecifications), images: product.images || [], ...(confidence === undefined ? {} : { confidence }) }; }
 
-const PLATFORM_PATTERNS = [
-  {
-    id: "amazon_in",
-    name: "Amazon India",
-    icon: "amazon",
-    color: "#FF9900",
-    domains: ["amazon.in", "amzn.in", "amzn.to"],
-    extractors: {
-      /** e.g. /dp/B09XYZ1234 or /gp/product/B09XYZ1234 */
-      asin: (url) => {
-        const m = url.match(/\/(?:dp|gp\/product|ASIN)\/([A-Z0-9]{10})/i);
-        return m ? m[1].toUpperCase() : null;
-      },
-      /** ?keywords=... */
-      keywords: (url) => {
-        try {
-          return new URL(url).searchParams.get("keywords") || null;
-        } catch { return null; }
-      },
-    },
-  },
-  {
-    id: "flipkart",
-    name: "Flipkart",
-    icon: "flipkart",
-    color: "#2874F0",
-    domains: ["flipkart.com", "dl.flipkart.com"],
-    extractors: {
-      /** /p/pid=XXXXXXXXXX */
-      pid: (url) => {
-        const m = url.match(/pid=([A-Z0-9]+)/i);
-        return m ? m[1].toUpperCase() : null;
-      },
-      /** Product name from path */
-      name: (url) => {
-        try {
-          const parts = new URL(url).pathname.split("/").filter(Boolean);
-          return parts[0] ? decodeURIComponent(parts[0]).replace(/-/g, " ") : null;
-        } catch { return null; }
-      },
-    },
-  },
-  {
-    id: "indiamart",
-    name: "IndiaMART",
-    icon: "indiamart",
-    color: "#E87722",
-    domains: ["indiamart.com", "dir.indiamart.com"],
-    extractors: {
-      name: (url) => {
-        try {
-          const parts = new URL(url).pathname.split("/").filter(Boolean);
-          // /proddetail/brand-model-12345678.html → "brand model"
-          if (parts[1]) return decodeURIComponent(parts[1]).replace(/-\d+\.html$/, "").replace(/-/g, " ");
-          return null;
-        } catch { return null; }
-      },
-    },
-  },
-  {
-    id: "tradeindia",
-    name: "TradeIndia",
-    icon: "tradeindia",
-    color: "#F58220",
-    domains: ["tradeindia.com"],
-    extractors: {
-      name: (url) => {
-        try {
-          const seg = new URL(url).pathname.split("/").filter(Boolean);
-          return seg[seg.length - 1]?.replace(/-/g, " ")?.replace(/\.html$/, "") || null;
-        } catch { return null; }
-      },
-    },
-  },
-  {
-    id: "industrybuying",
-    name: "IndustryBuying",
-    icon: "industrybuying",
-    color: "#1A73E8",
-    domains: ["industrybuying.com"],
-    extractors: {
-      name: (url) => {
-        try {
-          const seg = new URL(url).pathname.split("/").filter(Boolean);
-          return seg[0]?.replace(/-/g, " ") || null;
-        } catch { return null; }
-      },
-    },
-  },
-  {
-    id: "moglix",
-    name: "Moglix",
-    icon: "moglix",
-    color: "#E53935",
-    domains: ["moglix.com"],
-    extractors: {
-      name: (url) => {
-        try {
-          const seg = new URL(url).pathname.split("/").filter(Boolean);
-          return seg[0]?.replace(/-/g, " ") || null;
-        } catch { return null; }
-      },
-    },
-  },
-];
-
-function detectPlatform(rawUrl) {
-  let url;
-  try { url = new URL(rawUrl); } catch { return null; }
-  const host = url.hostname.replace(/^www\./, "");
-  return PLATFORM_PATTERNS.find((p) => p.domains.some((d) => host === d || host.endsWith(`.${d}`))) || null;
+function scoreSimilar(source, candidate) {
+  // Keep title/identity terms separate from the long specification list: otherwise
+  // a richly-described source product unfairly dilutes a very relevant title match.
+  const sourceTokens = new Set(tokens([source.name, source.brand, source.model, source.variant, source.color, source.capacity].join(" ")));
+  const candidateSpecs = { ...mapObject(candidate.specifications), ...mapObject(candidate.technicalSpecifications) };
+  const candidateTokens = new Set(tokens([candidate.name, candidate.brand, candidate.model, candidate.variant, candidate.color, candidate.capacity].join(" ")));
+  let score = [...sourceTokens].filter((token) => candidateTokens.has(token)).length / Math.max(sourceTokens.size, 1) * 55;
+  if (source.brand && norm(source.brand) === norm(candidate.brand)) score += 15;
+  if (source.category && norm(source.category) === norm(candidate.category)) score += 10;
+  if (source.model && norm(source.model) === norm(candidate.model)) score += 10;
+  for (const field of ["variant", "color", "capacity"]) if (source[field] && norm(source[field]) === norm(candidate[field])) score += 3;
+  const sourceSpecs = Object.values(source.specifications || {}).map(norm).filter(Boolean), candidateValues = Object.values(candidateSpecs).map(norm);
+  score += Math.min(7, sourceSpecs.filter((spec) => candidateValues.includes(spec)).length * 2);
+  return Math.min(99, Math.round(score));
 }
 
-function extractIdentifiers(rawUrl, platform) {
-  const ids = {};
-  if (!platform) return ids;
-  for (const [key, fn] of Object.entries(platform.extractors)) {
-    const value = fn(rawUrl);
-    if (value) ids[key] = value;
+async function exactMatch(extracted) {
+  const checks = [];
+  if (extracted.gtin) checks.push({ gtin: new RegExp(`^${esc(extracted.gtin)}$`, "i") });
+  if (extracted.sku) checks.push({ sku: new RegExp(`^${esc(extracted.sku)}$`, "i") });
+  if (extracted.model) checks.push({ model: new RegExp(`^${esc(extracted.model)}$`, "i") });
+  if (checks.length) { const direct = await Product.findOne({ ...published, $or: checks }).lean(); if (direct) return direct; }
+  if (extracted.brand && extracted.model) {
+    const brandModel = await Product.findOne({ ...published, brand: new RegExp(`^${esc(extracted.brand)}$`, "i"), model: new RegExp(`^${esc(extracted.model)}$`, "i"), ...(extracted.variant ? { variant: new RegExp(`^${esc(extracted.variant)}$`, "i") } : {}) }).lean();
+    if (brandModel) return brandModel;
   }
-  return ids;
+  if (extracted.name) {
+    const nameKey = normalizedText(extracted.name);
+    if (nameKey.length >= 8) {
+      const candidates = await Product.find(published).limit(200).lean();
+      const nameMatch = candidates.find((candidate) => {
+        const candidateKey = normalizedText(candidate.name);
+        return candidateKey === nameKey || candidateKey.includes(nameKey) || nameKey.includes(candidateKey);
+      });
+      if (nameMatch) return nameMatch;
+    }
+  }
+  // A product can also be exact when several distinctive page specifications agree.
+  // Do this only with two or more values to avoid classifying a generic voltage/size as exact.
+  const importantSpecs = Object.values(extracted.specifications || {}).map(norm).filter((value) => value.length > 2);
+  if (importantSpecs.length >= 2) {
+    const candidates = await Product.find({ ...published, ...(extracted.brand ? { brand: new RegExp(`^${esc(extracted.brand)}$`, "i") } : {}), ...(extracted.category ? { category: new RegExp(`^${esc(extracted.category)}$`, "i") } : {}) }).limit(50).lean();
+    const exact = candidates.find((candidate) => {
+      const values = Object.values({ ...mapObject(candidate.specifications), ...mapObject(candidate.technicalSpecifications) }).map(norm);
+      return importantSpecs.every((spec) => values.includes(spec));
+    });
+    if (exact) return exact;
+  }
+  return null;
 }
-
-/** Tokenise a string into meaningful search words */
-function tokenise(str = "") {
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 1);
+async function findSimilar(extracted, excludeId) {
+  const terms = [...new Set([extracted.brand, extracted.category, extracted.model, ...extracted.keywords].filter(Boolean))].slice(0, 12);
+  if (!terms.length) return [];
+  const categoryTerms = tokens(extracted.category).filter((term) => term.length >= 4);
+  const categoryScope = categoryTerms.length
+    ? { $or: categoryTerms.map((term) => ({ category: { $regex: esc(term), $options: "i" } })) }
+    : {};
+  let candidates;
+  try { candidates = await Product.find({ ...published, ...categoryScope, $text: { $search: terms.join(" ") } }, { score: { $meta: "textScore" } }).sort({ score: { $meta: "textScore" } }).limit(30).lean(); }
+  catch (error) {
+    console.warn("[price-finder] text search unavailable; using regex similarity fallback", JSON.stringify({
+      stage: "database_similarity",
+      message: error.message,
+    }));
+    try {
+      const termScope = {
+        $or: terms.slice(0, 6).map((term) => ({
+          $or: ["name", "brand", "model", "category", "variant"].map((field) => ({
+            [field]: { $regex: esc(term), $options: "i" },
+          })),
+        })),
+      };
+      candidates = await Product.find({
+        ...published,
+        ...(categoryTerms.length ? { $and: [categoryScope, termScope] } : termScope),
+      }).limit(30).lean();
+    } catch (fallbackError) {
+      console.error("[price-finder] regex similarity fallback failed", JSON.stringify({
+        stage: "database_similarity",
+        message: fallbackError.message,
+      }));
+      throw fallbackError;
+    }
+  }
+  return candidates
+    .filter((product) => !excludeId || String(product._id) !== String(excludeId))
+    .map((product) => ({ product, confidence: scoreSimilar(extracted, product) }))
+    .filter(({ confidence }) => confidence >= 35)
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 6)
+    .map(({ product, confidence }) => toPublic(product, confidence));
 }
-
-/** Score how well two strings overlap on tokens */
-function tokenOverlap(a = "", b = "") {
-  const ta = new Set(tokenise(a));
-  const tb = new Set(tokenise(b));
-  let hits = 0;
-  for (const t of ta) if (tb.has(t)) hits++;
-  return hits / Math.max(ta.size, tb.size, 1);
-}
-
-// ─── External Price Rows ──────────────────────────────────────────────────────
-
-/**
- * Build external price rows for the platform the URL came from.
- *
- * In production, replace the sections marked [API_INTEGRATION] with real calls to:
- *   • Amazon PA-API v5 (getItems by ASIN)
- *   • Flipkart Affiliate API (productSearch)
- *   • IndiaMART LeadManager API (product search)
- *   • IndustryBuying / Moglix affiliate / product feeds
- *
- * Until API credentials are provisioned, we return an "indicative" row
- * with fetch_required=true so the frontend can render a clear disclaimer.
- */
-function buildExternalRows(platform, identifiers, rawUrl, matched) {
-  if (!platform) return [];
-
-  const now = new Date().toISOString();
-
-  // [API_INTEGRATION] Placeholder for actual API calls
-  // In a real implementation, this would be:
-  //   const liveData = await amazonPAAPI.getItems({ ItemIds: [identifiers.asin] });
-  //   const price = liveData.ItemsResult.Items[0].Offers.Listings[0].Price.Amount;
-
-  return [
-    {
-      platform: platform.name,
-      platform_id: platform.id,
-      platform_color: platform.color,
-      seller: platform.name,
-      price: null,           // null = live price not fetched
-      mrp: null,
-      discount: null,
-      availability: "check_live",
-      shipping: null,
-      url: rawUrl,
-      last_updated: now,
-      source: "external",
-      fetch_required: true,   // tells the UI to show a "Visit site" CTA instead of price
-      note: `Live pricing requires ${platform.name} API credentials. Click "View on ${platform.name}" to see the current price.`,
-      identifiers,
-    },
-  ];
-}
-
-// ─── Main Handler ─────────────────────────────────────────────────────────────
+function validUrl(value) { try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol); } catch { return false; } }
 
 export async function findByUrl(req, res) {
-  const { url: rawUrl } = req.body;
-
-  if (!rawUrl || typeof rawUrl !== "string") {
-    return res.status(400).json({ success: false, message: "A product URL is required." });
-  }
-
-  // Validate URL format
+  const rawUrl = typeof req.body.url === "string" ? req.body.url.trim() : "";
   let parsedUrl;
   try {
-    parsedUrl = new URL(rawUrl.trim());
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) throw new Error("bad protocol");
-  } catch {
-    return res.status(400).json({ success: false, message: "Please provide a valid http/https URL." });
+    parsedUrl = parseProductUrl(rawUrl);
+  } catch (error) {
+    console.error("[price-finder] URL validation failed", JSON.stringify({ code: error.code, stage: error.stage, message: error.message }));
+    return res.status(400).json({ success: false, message: error.message });
   }
-
-  const platform = detectPlatform(rawUrl);
-  const identifiers = extractIdentifiers(rawUrl, platform);
-
-  // ── 1. Build search query from URL path / identifiers ──────────────────────
-
-  // Extract meaningful text from the URL to search with
-  const urlText = [
-    parsedUrl.pathname,
-    identifiers.name || "",
-    identifiers.keywords || "",
-  ].join(" ").replace(/[-_\/\\]/g, " ").replace(/[^a-z0-9\s]/gi, " ");
-
-  const searchTokens = tokenise(urlText).filter((t) => t.length > 2);
-  const searchPhrase = searchTokens.slice(0, 8).join(" ");
-
-  // ── 2. Exact match: SKU / model number ────────────────────────────────────
-
-  let exactMatch = null;
-  const modelTokens = searchTokens.filter((t) => /[a-z]/.test(t) && /\d/.test(t)); // alphanumeric = likely model
-  if (modelTokens.length) {
-    exactMatch = await Product.findOne({
-      status: "published",
-      $or: [
-        { model: { $in: modelTokens.map((t) => new RegExp(`^${t}$`, "i")) } },
-        { sku: { $in: modelTokens.map((t) => new RegExp(`^${t}$`, "i")) } },
-      ],
-    }).lean();
-  }
-
-  // ── 3. Full-text / fuzzy search ───────────────────────────────────────────
-
-  let candidates = [];
-  if (!exactMatch && searchPhrase.trim()) {
-    try {
-      candidates = await Product.find(
-        { $text: { $search: searchPhrase }, status: "published" },
-        { score: { $meta: "textScore" } },
-      )
-        .sort({ score: { $meta: "textScore" } })
-        .limit(10)
-        .lean();
-    } catch {
-      // Text index might not be available — fall back to regex
-      candidates = await Product.find({
-        status: "published",
-        $or: searchTokens.slice(0, 5).map((t) => ({
-          $or: [
-            { name: { $regex: t, $options: "i" } },
-            { brand: { $regex: t, $options: "i" } },
-            { model: { $regex: t, $options: "i" } },
-          ],
-        })),
-      })
-        .limit(10)
-        .lean();
-    }
-
-    // Re-score candidates by token overlap with URL text
-    candidates = candidates
-      .map((p) => ({
-        ...p,
-        _overlap: tokenOverlap(urlText, `${p.name} ${p.brand} ${p.model} ${p.category}`),
-      }))
-      .sort((a, b) => b._overlap - a._overlap);
-
-    // Promote best candidate to exact match if overlap is strong
-    if (candidates[0]?._overlap >= 0.35) {
-      exactMatch = candidates[0];
-    }
-  }
-
-  // ── 4. Fetch vendor offers for matched product ────────────────────────────
-
-  let vendorOffers = [];
-  if (exactMatch) {
-    const offers = await VendorOffer.find({
-      product: exactMatch._id,
-      status: "approved",
-    })
-      .populate("vendor", "name company")
-      .lean();
-
-    vendorOffers = offers.map((o) => ({
-      platform: "Industry Mandi",
-      platform_id: "industry_mandi",
-      platform_color: "#FF4D26",
-      seller: o.vendor?.company || o.vendor?.name || "Verified Vendor",
-      price: o.price,
-      mrp: o.price ? Math.round(o.price * 1.15) : null,
-      discount: o.discount || 0,
-      availability: o.stock === "available" ? "In Stock" : o.stock === "limited" ? "Limited" : "Out of Stock",
-      shipping: o.shippingCost || 0,
-      url: o.sellerUrl || `/product/${exactMatch.slug || exactMatch._id}`,
-      delivery: o.deliveryEstimate || "3-7 business days",
-      warranty: o.warranty || null,
-      last_updated: o.updatedAt,
-      source: "internal",
-      fetch_required: false,
+  let result;
+  try {
+    result = await extractProductFromUrl(parsedUrl.url.toString());
+  } catch (error) {
+    const extractionError = error instanceof ProductExtractionError
+      ? error
+      : new ProductExtractionError(error.message || "Unable to retrieve product information from this URL.", { code: "extraction_failed", stage: "extract", cause: error });
+    console.error("[price-finder] extraction failed", JSON.stringify({
+      domain: parsedUrl.domain,
+      code: extractionError.code,
+      stage: extractionError.stage,
+      status: extractionError.status,
+      message: extractionError.message,
+      providerDetail: typeof extractionError.cause === "string" ? extractionError.cause : extractionError.cause?.message,
     }));
+
+    // URL slugs are a safe, provider-independent fallback for catalog matching.
+    // This does not claim that the external page was read; it only uses the URL
+    // identity when the approved AI provider is unavailable or rejects the page.
+    const fallbackProduct = normalizeExtractedProduct({}, parsedUrl.url.toString());
+    if (fallbackProduct.name && fallbackProduct.name.length >= 4) {
+      try {
+        const matched = await exactMatch(fallbackProduct);
+        const similar = await findSimilar(fallbackProduct, matched?._id);
+        return res.json({
+          success: true,
+          data: {
+            extractionStatus: "succeeded",
+            submittedUrl: parsedUrl.url.toString(),
+            extractionSource: "url_fallback",
+            extractionWarning: "AI product-page extraction was unavailable; matching used the product URL.",
+            extractionError: { code: extractionError.code, message: "The product page could not be read, so the URL was used for catalog matching." },
+            extracted: fallbackProduct,
+            matchType: matched ? "exact" : similar.length ? "similar" : "none",
+            matched: matched ? toPublic(matched) : null,
+            similar,
+          },
+        });
+      } catch (fallbackError) {
+        console.error("[price-finder] URL fallback catalog matching failed", JSON.stringify({
+          domain: parsedUrl.domain,
+          stage: "database_match_fallback",
+          message: fallbackError.message,
+        }));
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        extractionStatus: "failed",
+        submittedUrl: parsedUrl.url.toString(),
+        extractionSource: null,
+        extracted: fallbackProduct,
+        extractionError: { code: extractionError.code, message: "Unable to retrieve product information from this URL." },
+        matched: null,
+        similar: [],
+        matchType: "extraction_failed",
+      },
+    });
   }
 
-  // ── 5. External platform rows ─────────────────────────────────────────────
-
-  const externalRows = buildExternalRows(platform, identifiers, rawUrl, exactMatch);
-
-  // ── 6. Combine + sort by price ────────────────────────────────────────────
-
-  const allOffers = [
-    ...vendorOffers,
-    ...externalRows,
-  ].sort((a, b) => {
-    if (a.price === null && b.price === null) return 0;
-    if (a.price === null) return 1;
-    if (b.price === null) return -1;
-    return a.price - b.price;
-  });
-
-  // ── 7. Similar products (top 6 fuzzy candidates excluding exact match) ────
-
-  const similar = candidates
-    .filter((c) => !exactMatch || String(c._id) !== String(exactMatch._id))
-    .slice(0, 6)
-    .map(({ _overlap, ...p }) => p);
-
-  return res.json({
-    success: true,
-    data: {
-      platform: platform
-        ? { id: platform.id, name: platform.name, color: platform.color }
-        : null,
-      identifiers,
-      matched: exactMatch
-        ? {
-          _id: exactMatch._id,
-          slug: exactMatch.slug,
-          name: exactMatch.name,
-          brand: exactMatch.brand,
-          model: exactMatch.model,
-          sku: exactMatch.sku,
-          category: exactMatch.category,
-          description: exactMatch.description,
-          specifications: Object.fromEntries(exactMatch.specifications || []),
-          technicalSpecifications: Object.fromEntries(exactMatch.technicalSpecifications || []),
-          images: exactMatch.images || [],
-          rating: exactMatch.rating,
-          reviewCount: exactMatch.reviewCount,
-        }
-        : null,
-      offers: allOffers,
-      similar,
-    },
-  });
+  let matched;
+  let similar = [];
+  try {
+    matched = await exactMatch(result.product);
+    similar = await findSimilar(result.product, matched?._id);
+  } catch (error) {
+    console.error("[price-finder] catalog matching failed", JSON.stringify({
+      domain: result.domain || parsedUrl.domain,
+      stage: "database_match",
+      message: error.message,
+    }));
+    return res.status(503).json({ success: false, message: "Unable to search the product catalog right now." });
+  }
+  res.json({ success: true, data: { extractionStatus: "succeeded", submittedUrl: parsedUrl.url.toString(), extracted: result.product, extractionSource: result.source, extractionWarning: null, matchType: matched ? "exact" : similar.length ? "similar" : "none", matched: matched ? toPublic(matched) : null, similar } });
+}
+export async function requestProduct(req, res) {
+  const rawUrl = typeof req.body.url === "string" ? req.body.url.trim() : "";
+  if (!validUrl(rawUrl)) return res.status(400).json({ success: false, message: "Please provide a valid http/https product URL." });
+  const extracted = normalizeExtractedProduct(req.body.extracted || {}, rawUrl);
+  const request = await ProductRequest.create({ user: req.user?._id || null, productUrl: rawUrl, productName: extracted.name, extractedKeywords: extracted.keywords, brand: extracted.brand, category: extracted.category, productDetails: extracted, imageUrl: extracted.imageUrl, status: "pending" });
+  res.status(201).json({ success: true, data: { _id: request._id, status: request.status, requestedAt: request.requestedAt }, message: "Product request submitted. We will review it shortly." });
 }
