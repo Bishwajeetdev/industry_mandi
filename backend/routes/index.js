@@ -12,6 +12,7 @@ import { protect, optionalProtect, allow } from "../middleware/auth.js";
 import { asyncHandler as ah } from "../middleware/asyncHandler.js";
 import { productImages, vendorAsset } from "../middleware/upload.js";
 import * as priceFinder from "../controllers/priceFinderController.js";
+import * as contact from "../controllers/contactController.js";
 
 // ─── Per-route rate limiters ──────────────────────────────────────────────────
 
@@ -57,6 +58,15 @@ const uploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 20,
   message: { success: false, message: "Too many upload requests. Please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+/** Strict: public contact form — 5 messages per 15 min per IP */
+const contactLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { success: false, message: "Too many messages sent. Please try again in 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -113,6 +123,19 @@ r.get("/products/:slug", ah(products.detail));
 // Price Finder (public — no auth required)
 r.post("/price-finder", ah(priceFinder.findByUrl));
 r.post("/price-finder/requests", optionalProtect, ah(priceFinder.requestProduct));
+
+// Contact (public)
+r.post(
+  "/contact",
+  contactLimiter,
+  [
+    body("name").trim().isLength({ min: 2, max: 100 }).withMessage("Please enter your name"),
+    body("email").isEmail().normalizeEmail().withMessage("Please enter a valid email address"),
+    body("topic").trim().isLength({ min: 2, max: 100 }).withMessage("Please select a topic"),
+    body("message").trim().isLength({ min: 10, max: 5000 }).withMessage("Your message must be between 10 and 5,000 characters"),
+  ],
+  ah(contact.submit),
+);
 
 // Product creation (admin or vendor — upload rate-limited)
 r.post(

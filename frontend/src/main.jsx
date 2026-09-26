@@ -1209,7 +1209,7 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
           <strong>{fmt(getDisplayPrice(product))}</strong>
           {product.oldPrice && <del>{fmt(product.oldPrice)}</del>}
         </div>
-        <div className="d-flex justify-content-between align-items-center mt-2">
+        <div className="product-meta-row">
           <small className="text-secondary">SKU: {product.sku || (product._id ? `IM-${product._id.slice(-5).toUpperCase()}` : "IM-001")}</small>
           <span className="rating text-warning small">
             <i className="bi bi-star-fill" /> {product.rating || "4.8"}
@@ -1223,7 +1223,10 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
               title="Compare product specifications"
             >
               <i className="bi bi-arrow-left-right me-1" />
-              <span>{isComparing ? "Comparing" : "Compare"}</span>
+              <span className="product-action-label">
+                <span className="product-action-label-full">{isComparing ? "Comparing" : "Compare"}</span>
+                <span className="product-action-label-compact">{isComparing ? "Selected" : "Compare"}</span>
+              </span>
             </button>
             <button
               className={`btn btn-sm btn-primary flex-fill ${cartAdded ? "btn-success" : ""}`}
@@ -1231,7 +1234,10 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
               title="Add product to procurement cart"
             >
               <i className={`bi ${cartAdded ? "bi-check2" : "bi-cart-plus"} me-1`} />
-              <span>{cartAdded ? "Added" : "Add to cart"}</span>
+              <span className="product-action-label">
+                <span className="product-action-label-full">{cartAdded ? "Added" : "Add to cart"}</span>
+                <span className="product-action-label-compact">{cartAdded ? "Added" : "Cart"}</span>
+              </span>
             </button>
           </div>
           <div className="product-action-footer">
@@ -1253,7 +1259,10 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
                 title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
               >
                 <i className={`bi ${isWishlisted ? "bi-heart-fill text-danger" : "bi-heart"} me-1`} />
-                <span>{isWishlisted ? "Wishlisted" : "Wishlist"}</span>
+                <span className="product-action-label">
+                  <span className="product-action-label-full">{isWishlisted ? "Wishlisted" : "Wishlist"}</span>
+                  <span className="product-action-label-compact">{isWishlisted ? "Saved" : "Save"}</span>
+                </span>
               </button>
             )}
             <Link
@@ -1261,7 +1270,10 @@ function ProductCard({ product, selectable, onToggle, chosen, onRemove }) {
               to={`/product/${product.slug || product._id}`}
               onClick={(e) => e.stopPropagation()}
             >
-              <span>View Details</span>
+              <span className="product-action-label">
+                <span className="product-action-label-full">View Details</span>
+                <span className="product-action-label-compact">Details</span>
+              </span>
               <i className="bi bi-arrow-up-right ms-1" />
             </Link>
           </div>
@@ -2192,6 +2204,24 @@ function About() {
 }
 
 function Contact() {
+  const [form, setForm] = useState({ name: "", email: "", topic: "Product sourcing", message: "" });
+  const [state, setState] = useState({ saving: false, sent: false, error: "" });
+  const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
+  const submit = async (event) => {
+    event.preventDefault();
+    setState({ saving: true, sent: false, error: "" });
+    try {
+      await api.post("/contact", form);
+      setState({ saving: false, sent: true, error: "" });
+      setForm({ name: "", email: "", topic: "Product sourcing", message: "" });
+    } catch (error) {
+      setState({ saving: false, sent: false, error: error.response?.data?.message || "Unable to send your message. Please try again." });
+    }
+  };
+  return <main className="container py-5 info-page"><section className="contact-hero"><div><span className="eyebrow dark">CONTACT US</span><h1>Let’s move your next project forward.</h1><p>Whether you are sourcing a critical component, need help with an order, or want to list your products, our team is ready to help.</p></div><div className="contact-status"><span className="telemetry-pip" /> Support desk online <small>Typical reply within one business day</small></div></section><div className="row g-4 mt-2"><div className="col-lg-7"><section className="contact-form-card">{state.sent ? <div className="contact-success"><i className="bi bi-check-circle-fill" /><h2>Message received.</h2><p>Thanks for reaching out. A member of our team will review your request and reply shortly.</p><button className="btn btn-outline-light" onClick={() => setState({ saving: false, sent: false, error: "" })}>Send another message</button></div> : <form onSubmit={submit}><div className="contact-form-heading"><span className="eyebrow dark">START A CONVERSATION</span><h2>How can we help?</h2><p>Share a few details and we’ll route your request to the right team.</p></div>{state.error && <div className="alert alert-danger py-2">{state.error}</div>}<div className="row g-3"><div className="col-sm-6"><label htmlFor="contact-name">Name</label><input id="contact-name" required maxLength="100" placeholder="Your name" value={form.name} onChange={update("name")} /></div><div className="col-sm-6"><label htmlFor="contact-email">Work email</label><input id="contact-email" required type="email" placeholder="you@company.com" value={form.email} onChange={update("email")} /></div><div className="col-12"><label htmlFor="contact-topic">What can we help with?</label><select id="contact-topic" value={form.topic} onChange={update("topic")}><option>Product sourcing</option><option>Order support</option><option>Become a vendor</option><option>Technical question</option><option>Other enquiry</option></select></div><div className="col-12"><label htmlFor="contact-message">Your message</label><textarea id="contact-message" rows="5" required minLength="10" maxLength="5000" placeholder="Tell us about the product, quantity, timeline, or issue..." value={form.message} onChange={update("message")} /></div><div className="col-12"><button className="btn btn-primary" disabled={state.saving}>{state.saving ? <><span className="spinner-border spinner-border-sm me-2" />Sending…</> : <>Send message <i className="bi bi-arrow-up-right ms-1" /></>}</button></div></div></form>}</section></div><div className="col-lg-5"><div className="contact-detail-stack"><article><span className="contact-detail-icon"><i className="bi bi-envelope" /></span><div><small>EMAIL SUPPORT</small><h3>hello@industrymandi.local</h3><p>For product, account, and marketplace questions.</p></div></article><article><span className="contact-detail-icon"><i className="bi bi-headset" /></span><div><small>BUYER &amp; VENDOR DESK</small><h3>+91 7903553221</h3><p>Monday–Friday · 9:00 AM–6:00 PM IST</p></div></article><article><span className="contact-detail-icon"><i className="bi bi-geo-alt" /></span><div><small>OPERATIONS HUB</small><h3>Bangalore, India</h3><p>Supporting industrial teams across India.</p></div></article></div></div></div></main>;
+}
+
+function ContactLegacy() {
   const [sent, setSent] = useState(false);
   return <main className="container py-5 info-page"><section className="contact-hero"><div><span className="eyebrow dark">CONTACT US</span><h1>Let’s move your next project forward.</h1><p>Whether you are sourcing a critical component, need help with an order, or want to list your products, our team is ready to help.</p></div><div className="contact-status"><span className="telemetry-pip" /> Support desk online <small>Typical reply within one business day</small></div></section><div className="row g-4 mt-2"><div className="col-lg-7"><section className="contact-form-card">{sent ? <div className="contact-success"><i className="bi bi-check-circle-fill" /><h2>Message received.</h2><p>Thanks for reaching out. A member of our team will review your request and reply shortly.</p><button className="btn btn-outline-light" onClick={() => setSent(false)}>Send another message</button></div> : <form onSubmit={(event) => { event.preventDefault(); setSent(true); }}><div className="contact-form-heading"><span className="eyebrow dark">START A CONVERSATION</span><h2>How can we help?</h2><p>Share a few details and we’ll route your request to the right team.</p></div><div className="row g-3"><div className="col-sm-6"><label htmlFor="contact-name">Name</label><input id="contact-name" required placeholder="Your name" /></div><div className="col-sm-6"><label htmlFor="contact-email">Work email</label><input id="contact-email" required type="email" placeholder="you@company.com" /></div><div className="col-12"><label htmlFor="contact-topic">What can we help with?</label><select id="contact-topic" defaultValue="Product sourcing"><option>Product sourcing</option><option>Order support</option><option>Become a vendor</option><option>Technical question</option><option>Other enquiry</option></select></div><div className="col-12"><label htmlFor="contact-message">Your message</label><textarea id="contact-message" rows="5" required placeholder="Tell us about the product, quantity, timeline, or issue..." /></div><div className="col-12"><button className="btn btn-primary">Send message <i className="bi bi-arrow-up-right ms-1" /></button></div></div></form>}</section></div><div className="col-lg-5"><div className="contact-detail-stack"><article><span className="contact-detail-icon"><i className="bi bi-envelope" /></span><div><small>EMAIL SUPPORT</small><h3>hello@industrymandi.local</h3><p>For product, account, and marketplace questions.</p></div></article><article><span className="contact-detail-icon"><i className="bi bi-headset" /></span><div><small>BUYER &amp; VENDOR DESK</small><h3>+91 7903553221</h3><p>Monday–Friday · 9:00 AM–6:00 PM IST</p></div></article><article><span className="contact-detail-icon"><i className="bi bi-geo-alt" /></span><div><small>OPERATIONS HUB</small><h3>Bangalore, India</h3><p>Supporting industrial teams across India.</p></div></article></div></div></div></main>;
 }
@@ -3843,7 +3873,7 @@ function Compare() {
           {bestProduct && (
             <div className="summary-leader-callout">
               <span className="eyebrow dark mb-0">TOP BENCHMARK</span>
-              <strong className="text-white text-truncate d-block">{bestProduct.product.name}</strong>
+              <strong className="summary-leader-name text-truncate d-block">{bestProduct.product.name}</strong>
               <span className="text-primary font-monospace small">Score: {bestProduct.score}/100</span>
             </div>
           )}
@@ -4066,7 +4096,12 @@ function Compare() {
           </div>
         </div>
 
-        <div className="table-responsive">
+        <div
+          className={`table-responsive compare-matrix-scroll comparison-count-${results.length}`}
+          role="region"
+          aria-label="Product comparison matrix. Swipe horizontally to view each product."
+          tabIndex="0"
+        >
           <table className="table compare-matrix-table mb-0">
             {/* Sticky Table Header */}
             <thead>
@@ -4114,7 +4149,7 @@ function Compare() {
                         {highlightDiffs && isDiff && <span className="diff-pill">DIFF</span>}
                       </td>
                       {results.map((r, i) => (
-                        <td key={r.product._id} className="spec-val-col">
+                        <td key={r.product._id} className="spec-val-col" data-product={r.product.brand || r.product.model || "Product"}>
                           {values[i]}
                         </td>
                       ))}
@@ -4142,7 +4177,7 @@ function Compare() {
                       {highlightDiffs && isDiff && <span className="diff-pill">DIFF</span>}
                     </td>
                     {results.map((r, i) => (
-                      <td key={r.product._id} className="spec-val-col fw-semibold">
+                      <td key={r.product._id} className="spec-val-col fw-semibold" data-product={r.product.brand || r.product.model || "Product"}>
                         {values[i]}
                       </td>
                     ))}
@@ -4178,7 +4213,7 @@ function Compare() {
                         {highlightDiffs && isDiff && <span className="diff-pill">DIFF</span>}
                       </td>
                       {results.map((r, i) => (
-                        <td key={r.product._id} className="spec-val-col">
+                        <td key={r.product._id} className="spec-val-col" data-product={r.product.brand || r.product.model || "Product"}>
                           {values[i]}
                         </td>
                       ))}
@@ -4195,7 +4230,7 @@ function Compare() {
                 {results.map((r) => {
                   const inCart = isProductInCart(r.product);
                   return (
-                    <td key={r.product._id} className="spec-val-col">
+                    <td key={r.product._id} className="spec-val-col" data-product={r.product.brand || r.product.model || "Product"}>
                       <button
                         className={`btn btn-sm ${inCart ? "btn-success" : "btn-primary"} w-100`}
                         onClick={() => handleAddToCart(r.product, r.price > 0 ? r.price : getDisplayPrice(r.product))}
@@ -7736,9 +7771,19 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </RouteBoundary>
+        <PublicFooter />
       </BrowserRouter>
     </Auth.Provider>
   );
+}
+
+function MarketFooter() {
+  return <footer className="market-footer"><div className="container"><div className="footer-top"><div><Link className="navbar-brand" to="/"><span className="brand-dot" /><span className="d-flex flex-column text-start"><span className="brand-name">INDUSTRY MANDI</span><span className="brand-subtext">Industrial Exchange</span></span></Link><p>Direct OEM procurement, verified manufacturer pricing, and benchmark telemetry across industrial equipment.</p></div><div className="footer-links"><div><strong>Catalog</strong><Link to="/products">All Machinery</Link><Link to="/compare">SpecMatrix Compare</Link><Link to="/price-finder">Price Finder</Link></div><div><strong>Enterprise</strong><Link to="/about">About Us</Link><Link to="/contact">Contact Support</Link><Link to="/register?role=vendor">Sell with us</Link></div><div><strong>Contact</strong><a href="mailto:hello@industrymandi.local">Email support</a><a href="tel:+917903553221">+91 7903553221</a><Link to="/contact">Talk to our team</Link></div></div></div><div className="footer-bottom"><span>© 2026 Industry Mandi. Built for precision industrial procurement.</span><span><i className="bi bi-linkedin" /> <i className="bi bi-twitter-x" /> <i className="bi bi-shield-check" /></span></div></div></footer>;
+}
+
+function PublicFooter() {
+  const { pathname } = useLocation();
+  return ["/about", "/contact"].includes(pathname) ? <MarketFooter /> : null;
 }
 
 function PublicChrome() {
