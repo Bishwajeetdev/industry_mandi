@@ -100,6 +100,21 @@ export async function create(req, res) {
   if (!requested.length)
     return res.status(422).json({ success: false, message: "Your cart is empty" });
 
+  const savedAddress = req.user.profile?.addresses?.find(
+    (address) => String(address._id) === String(req.body.addressId),
+  );
+  if (!savedAddress)
+    return res.status(422).json({ success: false, message: "Select a saved delivery address before placing your order" });
+  const shippingAddress = {
+    label: savedAddress.label,
+    line1: savedAddress.line1,
+    line2: savedAddress.line2,
+    city: savedAddress.city,
+    state: savedAddress.state,
+    postalCode: savedAddress.postalCode,
+    country: savedAddress.country,
+  };
+
   // Separate valid ObjectIds from string identifiers (slugs, SKUs, or custom IDs like "danfoss-vlt")
   const validObjectIds = [];
   const stringIdentifiers = [];
@@ -211,6 +226,7 @@ export async function create(req, res) {
       vendor: vendorKey === "platform" ? undefined : vendorKey,
       items,
       total,  // ← computed from DB prices, not client
+      shippingAddress,
       invoiceNumber: `INV-${Date.now()}`,
     });
     orders.push(order);

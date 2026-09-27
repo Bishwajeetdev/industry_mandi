@@ -5040,7 +5040,15 @@ function Dashboard() {
   const d = state.data || {};
   const isVendor = user.role === "vendor";
   const isAdmin = user.role === "admin";
+  const isBuyer = user.role === "buyer";
   const vendorRevenue = details.orders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+  const buyerSpend = details.orders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+  const buyerItemCount = details.orders.reduce((sum, order) => sum + (order.items || []).reduce((quantity, item) => quantity + (Number(item.quantity) || 0), 0), 0);
+  const buyerOpenOrders = details.orders.filter((order) => !["Delivered", "Cancelled"].includes(order.status));
+  const buyerOpenItems = buyerOpenOrders.reduce((sum, order) => sum + (order.items || []).reduce((quantity, item) => quantity + (Number(item.quantity) || 0), 0), 0);
+  const buyerDeliveredOrders = details.orders.filter((order) => order.status === "Delivered").length;
+  const buyerCancelledOrders = details.orders.filter((order) => order.status === "Cancelled").length;
+  const buyerReturns = details.orders.filter((order) => ["Requested", "Approved", "Refunded"].includes(order.returnStatus)).length;
   const vendorStockUnits = details.products.reduce((sum, product) => sum + (Number(product.stock) || 0), 0);
   const vendorPendingProducts = details.products.filter((product) => ["pending", "in_review"].includes(String(product.status || "").toLowerCase())).length;
   const vendorCompletedOrders = details.orders.filter((order) => order.status === "Delivered").length;
@@ -5082,7 +5090,7 @@ function Dashboard() {
                 <i className="bi bi-percent" />
               </div>
               <div className="db-overview-data">
-                <strong>{isAdmin ? (d.orders || 832) : isVendor ? details.orders.length : (details.orders.length || 14)}</strong>
+                <strong>{isAdmin ? (d.orders ?? 0) : details.orders.length}</strong>
                 <span>{isAdmin ? "Total Orders" : isVendor ? "Sales orders" : "Total Orders"}</span>
               </div>
             </div>
@@ -5092,8 +5100,8 @@ function Dashboard() {
                 <i className="bi bi-currency-rupee" />
               </div>
               <div className="db-overview-data">
-                <strong>{fmt(isVendor ? vendorRevenue : (d.orders ? d.orders * 4200 : 18300))}</strong>
-                <span>Revenue</span>
+                <strong>{fmt(isVendor ? vendorRevenue : isBuyer ? buyerSpend : 0)}</strong>
+                <span>{isBuyer ? "Total spent" : "Revenue"}</span>
               </div>
             </div>
 
@@ -5102,8 +5110,8 @@ function Dashboard() {
                 <i className="bi bi-graph-up-arrow" />
               </div>
               <div className="db-overview-data">
-                <strong>{isVendor ? vendorCompletedOrders : fmt(d.products ? d.products * 120 : 868)}</strong>
-                <span>{isVendor ? "Delivered orders" : "Profit"}</span>
+                <strong>{isVendor ? vendorCompletedOrders : isBuyer ? buyerDeliveredOrders : (d.offers ?? 0)}</strong>
+                <span>{isVendor || isBuyer ? "Delivered orders" : "Active offers"}</span>
               </div>
             </div>
 
@@ -5112,8 +5120,8 @@ function Dashboard() {
                 <i className="bi bi-house-door" />
               </div>
               <div className="db-overview-data">
-                <strong>{isVendor ? vendorOpenOrders : "₹ 17,432"}</strong>
-                <span>{isVendor ? "Open orders" : "Cost"}</span>
+                <strong>{isVendor ? vendorOpenOrders : isBuyer ? buyerOpenOrders.length : (d.products ?? 0)}</strong>
+                <span>{isVendor || isBuyer ? "Open orders" : "Products"}</span>
               </div>
             </div>
           </div>
@@ -5129,8 +5137,8 @@ function Dashboard() {
                 <i className="bi bi-box-seam" />
               </div>
               <div className="db-overview-data">
-                <strong>{isVendor ? vendorStockUnits : d.products || details.products.length || 868}</strong>
-                <span>{isVendor ? "Stock units" : "Quantity in Hand"}</span>
+                <strong>{isVendor ? vendorStockUnits : isBuyer ? buyerItemCount : (d.products ?? 0)}</strong>
+                <span>{isVendor ? "Stock units" : isBuyer ? "Items purchased" : "Products"}</span>
               </div>
             </div>
 
@@ -5139,8 +5147,8 @@ function Dashboard() {
                 <i className="bi bi-geo-alt" />
               </div>
               <div className="db-overview-data">
-                <strong>{isVendor ? vendorPendingProducts : d.orders || details.orders.filter(o => o.status !== "Delivered").length || 200}</strong>
-                <span>{isVendor ? "Products awaiting approval" : "To be received"}</span>
+                <strong>{isVendor ? vendorPendingProducts : isBuyer ? buyerOpenItems : (d.pendingProducts ?? 0)}</strong>
+                <span>{isVendor ? "Products awaiting approval" : isBuyer ? "Items to be received" : "Pending products"}</span>
               </div>
             </div>
           </div>
@@ -5159,8 +5167,8 @@ function Dashboard() {
                 <i className="bi bi-bag-check" />
               </div>
               <div className="db-overview-data">
-                <strong>{isVendor ? details.orders.length : details.orders.length || d.orders || 82}</strong>
-                <span>{isVendor ? "Sales orders" : "Purchase"}</span>
+                <strong>{isVendor || isBuyer ? details.orders.length : (d.orders ?? 0)}</strong>
+                <span>{isVendor ? "Sales orders" : "Purchase orders"}</span>
               </div>
             </div>
 
@@ -5169,8 +5177,8 @@ function Dashboard() {
                 <i className="bi bi-cash-stack" />
               </div>
               <div className="db-overview-data">
-                <strong>{isVendor ? fmt(vendorRevenue) : "₹ 13,573"}</strong>
-                <span>{isVendor ? "Order value" : "Cost"}</span>
+                <strong>{fmt(isVendor ? vendorRevenue : isBuyer ? buyerSpend : 0)}</strong>
+                <span>{isVendor ? "Order value" : "Purchase value"}</span>
               </div>
             </div>
 
@@ -5179,8 +5187,8 @@ function Dashboard() {
                 <i className="bi bi-x-circle" />
               </div>
               <div className="db-overview-data">
-                <strong>{isVendor ? vendorCancelledOrders : d.pendingProducts || 5}</strong>
-                <span>{isVendor ? "Cancelled orders" : "Cancel"}</span>
+                <strong>{isVendor ? vendorCancelledOrders : isBuyer ? buyerCancelledOrders : (d.pendingProducts ?? 0)}</strong>
+                <span>{isVendor || isBuyer ? "Cancelled orders" : "Pending products"}</span>
               </div>
             </div>
 
@@ -5189,8 +5197,8 @@ function Dashboard() {
                 <i className="bi bi-arrow-return-left" />
               </div>
               <div className="db-overview-data">
-                <strong>{isVendor ? vendorReturns : "₹ 17,432"}</strong>
-                <span>{isVendor ? "Returns requested" : "Return"}</span>
+                <strong>{isVendor ? vendorReturns : isBuyer ? buyerReturns : 0}</strong>
+                <span>Returns</span>
               </div>
             </div>
           </div>
@@ -5206,8 +5214,8 @@ function Dashboard() {
                 <i className="bi bi-person-badge" />
               </div>
               <div className="db-overview-data">
-                <strong>{isVendor ? (d.offers ?? 0) : d.vendors || 31}</strong>
-                <span>{isVendor ? "Submitted offers" : "Number of Suppliers"}</span>
+                <strong>{isVendor ? (d.offers ?? 0) : isBuyer ? (d.wishlist ?? 0) : (d.vendors ?? 0)}</strong>
+                <span>{isVendor ? "Submitted offers" : isBuyer ? "Wishlist items" : "Vendors"}</span>
               </div>
             </div>
 
@@ -5216,8 +5224,8 @@ function Dashboard() {
                 <i className="bi bi-tags" />
               </div>
               <div className="db-overview-data">
-                <strong>{isVendor ? vendorCategoryCount : d.offers || 21}</strong>
-                <span>{isVendor ? "Product categories" : "Number of Categories"}</span>
+                <strong>{isVendor ? vendorCategoryCount : isBuyer ? (d.comparisons ?? 0) : (d.offers ?? 0)}</strong>
+                <span>{isVendor ? "Product categories" : isBuyer ? "Saved comparisons" : "Active offers"}</span>
               </div>
             </div>
           </div>
@@ -5225,7 +5233,7 @@ function Dashboard() {
       </div>
 
       {/* ── ROW 3: Sales & Purchase Chart + Order Summary Chart ── */}
-      {!isVendor && <div className="db-charts-grid" style={{ marginTop: 20 }}>
+      {isAdmin && <div className="db-charts-grid" style={{ marginTop: 20 }}>
         {/* Sales & Purchase Bar Chart */}
         <div className="db-card" style={{ marginBottom: 0 }}>
           <div className="db-card-header">
@@ -6237,6 +6245,13 @@ function CartPage() {
   const { user, login, logout } = useAuth();
   const nav = useNavigate();
   const [items, setItems] = useState(() => JSON.parse(localStorage.getItem("cart") || "[]"));
+  const [addresses, setAddresses] = useState([]);
+  const [selectedAddressId, setSelectedAddressId] = useState("");
+  const [showAddressForm, setShowAddressForm] = useState(false);
+  const [addressForm, setAddressForm] = useState({ label: "Home", line1: "", line2: "", city: "", state: "", postalCode: "", country: "India" });
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [addressSaving, setAddressSaving] = useState(false);
+  const [addressError, setAddressError] = useState("");
   const [message, setMessage] = useState("");
   const [checkingOut, setCheckingOut] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -6244,6 +6259,50 @@ function CartPage() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    if (user?.role !== "buyer") {
+      setAddresses([]);
+      setSelectedAddressId("");
+      return;
+    }
+    let active = true;
+    setAddressLoading(true);
+    setAddressError("");
+    api.get("/buyer/addresses")
+      .then((response) => {
+        if (!active) return;
+        const saved = response.data.data || [];
+        setAddresses(saved);
+        setSelectedAddressId((current) => current && saved.some((address) => String(address._id) === current)
+          ? current
+          : String(saved.find((address) => address.isDefault)?._id || saved[0]?._id || ""));
+        setShowAddressForm(saved.length === 0);
+      })
+      .catch((error) => {
+        if (active) setAddressError(error.response?.data?.message || error.message || "Unable to load saved addresses.");
+      })
+      .finally(() => { if (active) setAddressLoading(false); });
+    return () => { active = false; };
+  }, [user?.role]);
+
+  const saveAddress = async (event) => {
+    event.preventDefault();
+    setAddressSaving(true);
+    setAddressError("");
+    try {
+      const response = await api.post("/buyer/addresses", { ...addressForm, isDefault: addresses.length === 0 });
+      const saved = response.data.data || [];
+      setAddresses(saved);
+      setSelectedAddressId(String(saved[saved.length - 1]?._id || ""));
+      setAddressForm({ label: "Home", line1: "", line2: "", city: "", state: "", postalCode: "", country: "India" });
+      setShowAddressForm(false);
+    } catch (error) {
+      setAddressError(error.response?.data?.message || error.message || "Unable to save this address.");
+    } finally {
+      setAddressSaving(false);
+    }
+  };
 
   const updateQuantity = (id, quantity) => {
     const next = items.map((item) => (item._id === id ? { ...item, quantity: Math.max(1, quantity) } : item));
@@ -6276,7 +6335,7 @@ function CartPage() {
         name: item.name,
         quantity: Math.max(1, parseInt(item.quantity, 10) || 1),
       }));
-      const response = await api.post("/orders", { items: payload });
+      const response = await api.post("/orders", { items: payload, addressId: selectedAddressId });
       const numbers = (response.data?.data?.orders || []).map((order) => order.orderNumber).join(", ");
       localStorage.removeItem("cart");
       setItems([]);
@@ -6293,6 +6352,10 @@ function CartPage() {
   const checkout = async () => {
     if (!user || user.role !== "buyer") {
       setShowAuthModal(true);
+      return;
+    }
+    if (!selectedAddressId) {
+      setAddressError("Select or add a delivery address before placing your order.");
       return;
     }
     await placeOrder(user);
@@ -6312,7 +6375,6 @@ function CartPage() {
       }
       login(r.data.data);
       setShowAuthModal(false);
-      await placeOrder(loggedInUser);
     } catch (err) {
       setAuthError(err.response?.data?.message || "Invalid credentials. Please verify your email and password.");
     } finally {
@@ -6365,6 +6427,45 @@ function CartPage() {
           </div>
           <aside className="col-lg-4">
             <div className="offer-panel cart-summary">
+              <section className="cart-address-section" aria-labelledby="cart-delivery-title">
+                <div className="cart-address-heading">
+                  <h2 id="cart-delivery-title">Delivery address</h2>
+                  {user?.role === "buyer" && !showAddressForm && <button type="button" className="cart-address-add" onClick={() => { setAddressError(""); setShowAddressForm(true); }}>+ Add address</button>}
+                </div>
+                {user?.role !== "buyer" ? (
+                  <p className="cart-address-note">Sign in as a buyer to choose a delivery address.</p>
+                ) : addressLoading ? (
+                  <p className="cart-address-note">Loading saved addresses…</p>
+                ) : (
+                  <>
+                    {addresses.length > 0 && <div className="cart-address-list">
+                      {addresses.map((address) => (
+                        <label className={`cart-address-option ${selectedAddressId === String(address._id) ? "selected" : ""}`} key={address._id}>
+                          <input type="radio" name="deliveryAddress" value={address._id} checked={selectedAddressId === String(address._id)} onChange={() => { setSelectedAddressId(String(address._id)); setAddressError(""); }} />
+                          <span><strong>{address.label || "Delivery address"}{address.isDefault && <small>Default</small>}</strong><span>{address.line1}{address.line2 ? `, ${address.line2}` : ""}</span><span>{address.city}, {address.state} {address.postalCode}</span><span>{address.country || "India"}</span></span>
+                        </label>
+                      ))}
+                    </div>}
+                    {showAddressForm && <form className="cart-address-form" onSubmit={saveAddress}>
+                      <label>Address label<input className="form-control" value={addressForm.label} onChange={(event) => setAddressForm({ ...addressForm, label: event.target.value })} placeholder="Home, Office" /></label>
+                      <label>Address line 1<input className="form-control" required value={addressForm.line1} onChange={(event) => setAddressForm({ ...addressForm, line1: event.target.value })} autoComplete="address-line1" /></label>
+                      <label>Address line 2<input className="form-control" value={addressForm.line2} onChange={(event) => setAddressForm({ ...addressForm, line2: event.target.value })} autoComplete="address-line2" /></label>
+                      <div className="cart-address-form-grid">
+                        <label>City<input className="form-control" required value={addressForm.city} onChange={(event) => setAddressForm({ ...addressForm, city: event.target.value })} autoComplete="address-level2" /></label>
+                        <label>State<input className="form-control" required value={addressForm.state} onChange={(event) => setAddressForm({ ...addressForm, state: event.target.value })} autoComplete="address-level1" /></label>
+                        <label>Postal code<input className="form-control" required value={addressForm.postalCode} onChange={(event) => setAddressForm({ ...addressForm, postalCode: event.target.value })} autoComplete="postal-code" /></label>
+                        <label>Country<input className="form-control" required value={addressForm.country} onChange={(event) => setAddressForm({ ...addressForm, country: event.target.value })} autoComplete="country-name" /></label>
+                      </div>
+                      <div className="cart-address-form-actions">
+                        {addresses.length > 0 && <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => setShowAddressForm(false)}>Cancel</button>}
+                        <button type="submit" className="btn btn-primary btn-sm" disabled={addressSaving}>{addressSaving ? "Saving…" : "Save address"}</button>
+                      </div>
+                    </form>}
+                    {addresses.length === 0 && !showAddressForm && <p className="cart-address-note">Add a delivery address to continue.</p>}
+                  </>
+                )}
+                {addressError && <p className="cart-address-error" role="alert">{addressError}</p>}
+              </section>
               <span className="eyebrow dark">ORDER SUMMARY</span>
               <div>
                 <span>Subtotal (excl. taxes)</span>
@@ -6379,7 +6480,7 @@ function CartPage() {
                 <span>Estimated Total</span>
                 <strong>{fmt(total)}</strong>
               </div>
-              <button className="btn btn-primary w-100 mt-3" disabled={checkingOut} onClick={checkout}>
+              <button className="btn btn-primary w-100 mt-3" disabled={checkingOut || addressLoading || (user?.role === "buyer" && !selectedAddressId)} onClick={checkout}>
                 {checkingOut ? "Submitting purchase order…" : "Submit Procurement Order"} <i className="bi bi-arrow-right ms-2" />
               </button>
             </div>

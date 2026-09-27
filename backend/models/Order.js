@@ -11,7 +11,7 @@ const schema = new mongoose.Schema(
     tracking: { carrier: String, number: String, url: String },
     returnStatus: { type: String, enum: ["Not requested", "Requested", "Approved", "Refunded", "Rejected"], default: "Not requested" },
     invoiceNumber: String,
-    shippingAddress: { line1: String, city: String, state: String, postalCode: String, country: String },
+    shippingAddress: { label: String, line1: String, line2: String, city: String, state: String, postalCode: String, country: String },
   },
   { timestamps: true },
 );

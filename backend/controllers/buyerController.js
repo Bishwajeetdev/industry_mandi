@@ -67,12 +67,12 @@ export async function reviews(req, res) {
 }
 
 export async function dashboard(req, res) {
-  const [wishlist, comparisons, reviews] = await Promise.all([
-    User.countDocuments({ _id: req.user._id, wishlist: { $exists: true, $ne: [] } }),
+  const [user, comparisons, reviews] = await Promise.all([
+    User.findById(req.user._id).select("wishlist"),
     Comparison.countDocuments({ buyer: req.user._id }),
     Review.countDocuments({ buyer: req.user._id }),
   ]);
-  res.json({ success: true, message: 'Buyer dashboard retrieved', data: { wishlist, comparisons, reviews } });
+  res.json({ success: true, message: 'Buyer dashboard retrieved', data: { wishlist: user?.wishlist?.length || 0, comparisons, reviews } });
 }
 
 export async function notifications(req, res) {
