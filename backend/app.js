@@ -5,11 +5,7 @@ import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import path from 'path';
 import routes from './routes/index.js';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const configuredOrigins = (process.env.CLIENT_URL || '')
   .split(',')
@@ -150,17 +146,6 @@ app.use((err, req, res, next) => {
     // Never expose error details or stack in production
     ...(isProd ? {} : { error: err.errors, detail: err.message }),
   });
-});
-
-// Path pointing from backend/ to frontend/dist
-const frontendDistPath = path.resolve(__dirname, '../frontend/dist');
-
-// 1. Serve Vite's compiled static assets
-app.use(express.static(frontendDistPath));
-
-// 2. Wildcard catch-all: send index.html for direct URL visits / page reloads
-app.get('*', (req, res) => {
-  res.sendFile(path.resolve(frontendDistPath, 'index.html'));
 });
 
 export default app;
