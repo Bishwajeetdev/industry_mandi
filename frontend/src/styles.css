@@ -3402,6 +3402,51 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--brand-orange);
 }
 
+.compare-hero-grid-section > .row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0;
+}
+.compare-hero-grid-section > .row > [class*="col-"] {
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  padding: 0;
+}
+.compare-machine-card { min-width: 0; }
+
+@media (max-width: 991px) {
+  .compare-machine-card { padding: 16px; }
+  .card-top-bar { margin-bottom: 10px; }
+  .card-image-box { height: 130px; margin-bottom: 10px; }
+  .compare-machine-card .machine-title { font-size: .96rem; }
+  .compare-machine-card .score-number { font-size: 1.7rem; }
+  .compare-machine-card .telemetry-score-box { gap: 10px; padding: 10px; }
+  .compare-machine-card .price-val { font-size: 1.25rem; }
+}
+
+@media (max-width: 575px) {
+  .compare-hero-grid-section > .row { gap: 10px; }
+  .compare-machine-card { padding: 10px; border-radius: var(--radius-md); }
+  .rank-ribbon { max-width: calc(100% - 28px); padding: 4px 6px; font-size: .57rem; }
+  .card-top-bar { margin-bottom: 8px; }
+  .card-image-box { height: 88px; margin-bottom: 8px; }
+  .card-image-box .oem-badge { bottom: 4px; left: 4px; max-width: calc(100% - 8px); padding: 3px 5px; font-size: .52rem; }
+  .card-info-header > .font-monospace { font-size: .56rem !important; overflow-wrap: anywhere; }
+  .compare-machine-card .machine-title { font-size: .78rem; line-height: 1.25; margin: 4px 0 8px; }
+  .compare-machine-card .telemetry-score-box { gap: 6px; padding: 7px; margin-bottom: 8px; }
+  .compare-machine-card .score-number { font-size: 1.3rem; }
+  .compare-machine-card .score-denom { font-size: .65rem; }
+  .compare-machine-card .score-label { font-size: .52rem; letter-spacing: 0; margin-bottom: 4px; }
+  .compare-machine-card .score-progress-track { height: 4px; }
+  .compare-machine-card .card-price-section { padding-top: 8px; }
+  .compare-machine-card .price-val { font-size: .95rem; overflow-wrap: anywhere; }
+  .compare-machine-card .price-sub { font-size: .56rem; line-height: 1.25; }
+  .compare-machine-card .stock-pill { align-items: flex-start; gap: 4px; font-size: .58rem; line-height: 1.25; }
+  .stock-dot { flex: 0 0 auto; margin-top: 2px; }
+}
+
 /* Telemetry Gauge Box */
 .telemetry-score-box {
   background: var(--surface-container-low);
@@ -3974,28 +4019,151 @@ h1, h2, h3, h4, h5, h6 {
    PRINT STYLES FOR SPEC SHEET EXPORT
    -------------------------------------------------------------------------- */
 @media print {
-  body {
-    background: #fff !important;
-    color: #000 !important;
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
   }
 
-  header, footer, .specmatrix-toolbar, .btn-remove-machine, .card-actions-row, .add-compare-slot, .spec-action-row, .specmatrix-sticky-selector-bar, .specmatrix-toast {
+  html,
+  body {
+    width: 100% !important;
+    margin: 0 !important;
+    background: #fff !important;
+    color: #17202a !important;
+    font-size: 9pt !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  header,
+  footer,
+  .db-sidebar,
+  .db-topbar,
+  .specmatrix-toolbar,
+  .btn-remove-machine,
+  .card-actions-row,
+  .add-compare-slot,
+  .spec-action-row,
+  .specmatrix-sticky-selector-bar,
+  .specmatrix-toast,
+  .specmatrix-breadcrumbs {
     display: none !important;
   }
 
   .compare-page {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
     padding: 0 !important;
+    animation: none !important;
   }
 
-  .compare-machine-card, .specmatrix-matrix-table-panel, .specmatrix-telemetry-panel {
-    border: 1px solid #ccc !important;
+  .specmatrix-top-header { margin-bottom: 5mm !important; }
+  .specmatrix-top-header h1 { margin: 0 0 2mm !important; font-size: 19pt !important; }
+  .specmatrix-top-header p { color: #46515c !important; font-size: 9pt !important; }
+  .specmatrix-summary-card {
+    display: flex !important;
+    padding: 3mm !important;
+    border: 1px solid #cbd2d9 !important;
+    background: #f4f6f8 !important;
     box-shadow: none !important;
     break-inside: avoid;
   }
+  .summary-body p { color: #34404b !important; }
+  .summary-leader-callout { max-width: 48mm !important; }
 
-  .compare-matrix-table th, .compare-matrix-table td {
-    padding: 8px 12px !important;
-    font-size: 0.75rem !important;
+  .compare-hero-grid-section { margin-bottom: 5mm !important; }
+  .compare-hero-grid-section > .row {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 3mm !important;
+    margin: 0 !important;
+  }
+  .compare-hero-grid-section > .row > [class*="col-"] {
+    width: auto !important;
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  .compare-machine-card,
+  .specmatrix-matrix-table-panel,
+  .specmatrix-telemetry-panel {
+    color: #17202a !important;
+    border: 1px solid #b8c0c8 !important;
+    border-radius: 2mm !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    break-inside: avoid-page;
+  }
+  .compare-machine-card { padding: 3mm !important; }
+  .card-image-box { height: 28mm !important; background: #f4f6f8 !important; }
+  .card-image-box img { object-fit: contain !important; }
+  .machine-title { color: #17202a !important; font-size: 11pt !important; }
+  .card-info-header,
+  .telemetry-score-box,
+  .card-price-section { padding: 2mm 0 !important; }
+  .price-val,
+  .score-number,
+  .score-label,
+  .price-sub,
+  .stock-pill,
+  .card-info-header .text-secondary { color: #17202a !important; }
+  .stock-pill { background: #f1f4f6 !important; border: 1px solid #d5dbe0 !important; }
+
+  .specmatrix-telemetry-panel { margin-bottom: 5mm !important; }
+  .telemetry-metric-row { break-inside: avoid; padding: 2mm 3mm !important; }
+  .metric-desc { color: #46515c !important; }
+
+  .specmatrix-matrix-table-panel { overflow: visible !important; }
+  .specmatrix-matrix-table-panel .panel-header { padding: 3mm !important; }
+  .specmatrix-matrix-table-panel h2 { font-size: 13pt !important; }
+  .compare-matrix-scroll {
+    width: 100% !important;
+    max-width: none !important;
+    overflow: visible !important;
+  }
+  .compare-matrix-table {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+  }
+  .compare-matrix-table thead { display: table-header-group !important; }
+  .compare-matrix-table tr { break-inside: avoid-page; }
+  .compare-matrix-table th,
+  .compare-matrix-table td {
+    height: auto !important;
+    padding: 2mm !important;
+    border: 1px solid #cbd2d9 !important;
+    color: #17202a !important;
+    background: #fff !important;
+    font-size: 8pt !important;
+    line-height: 1.3 !important;
+    overflow-wrap: anywhere;
+  }
+  .compare-matrix-table thead th,
+  .compare-matrix-table .spec-section-divider td {
+    color: #17202a !important;
+    background: #edf1f4 !important;
+  }
+  .compare-matrix-table .sticky-col { position: static !important; }
+  .compare-matrix-table .spec-product-col { min-width: 0 !important; }
+  .compare-matrix-table .th-product-head { min-width: 0 !important; }
+  .compare-matrix-table .th-title { color: #17202a !important; font-size: 8pt !important; }
+  .compare-matrix-table .th-brand,
+  .compare-matrix-table .th-price,
+  .compare-matrix-table .spec-attr-col,
+  .compare-matrix-table .spec-val-col { color: #17202a !important; }
+  .compare-matrix-table .row-diff-highlight td { background: #fff7e8 !important; }
+
+  .compare-page a { color: #17202a !important; text-decoration: none !important; }
+  .compare-page section { break-inside: auto; }
+  .compare-page h1,
+  .compare-page h2,
+  .compare-page h3 { break-after: avoid-page; }
+
+  .compare-matrix-table th,
+  .compare-matrix-table td {
+    vertical-align: top !important;
   }
 }
 
@@ -4431,6 +4599,34 @@ h1, h2, h3, h4, h5, h6 {
 .offer-row > b,
 .vendor-dashboard .offer-row > b { flex: 0 0 auto; color: #10b981 !important; font-family: var(--font-headline); font-size: 0.85rem; font-weight: 700; }
 
+.vendor-submitted-records {
+  background: var(--surface);
+  border-color: var(--border-subtle);
+  color: var(--on-surface);
+}
+.vendor-submitted-records h3 { color: var(--on-surface-bright); }
+.vendor-submitted-records .offer-row {
+  color: var(--on-surface);
+  border-bottom-color: var(--border-subtle);
+}
+.vendor-submitted-records .offer-row span b,
+.vendor-submitted-records .offer-row span strong { color: var(--on-surface-bright) !important; }
+.vendor-submitted-records .offer-row small,
+.vendor-submitted-records .offer-row span small { color: var(--on-surface-muted) !important; }
+.vendor-submitted-records .offer-row > b { color: var(--tertiary-mint) !important; }
+.vendor-pairing-requests {
+  background: var(--surface);
+  border-color: var(--border-subtle);
+  color: var(--on-surface);
+}
+.vendor-pairing-requests h3 { color: var(--on-surface-bright); }
+.vendor-pairing-requests .offer-row { color: var(--on-surface); border-bottom-color: var(--border-subtle); }
+.vendor-pairing-requests .offer-row span b { color: var(--on-surface-bright) !important; }
+.vendor-pairing-requests .offer-row small,
+.vendor-pairing-requests .offer-row span small { color: var(--on-surface-muted) !important; }
+.vendor-pairing-requests .offer-row .db-badge { color: inherit; font-family: var(--font-headline); font-size: .65rem; }
+.vendor-pairing-requests .pairing-review-note { color: var(--error-red) !important; white-space: normal; }
+.vendor-pairing-empty { margin: 0; color: var(--on-surface-muted); }
 
 .admin-module-grid {
   display: grid;
@@ -5467,6 +5663,8 @@ h1, h2, h3, h4, h5, h6 {
 .vendor-verification-row { display:grid; grid-template-columns:210px minmax(0,1fr); align-items:center; gap:14px; padding:14px; border:1px solid var(--border-glass); border-radius:12px; }
 .vendor-verification-row strong,.vendor-verification-row small { display:block; }
 .vendor-verification-row small { color:var(--on-surface-muted); margin-top:3px; text-transform:capitalize; font-size:.75rem; }
+.vendor-verification-preview { display:inline-flex; align-items:center; gap:6px; margin-top:8px; color:var(--brand-orange); font-size:.8rem; font-weight:700; text-decoration:none; }
+.vendor-verification-preview:hover { color:var(--brand-orange-hover); text-decoration:underline; }
 .vendor-danger-zone { margin-top:28px; padding-top:20px; border-top:1px solid rgba(239,68,68,.3); }
 .vendor-danger-zone p { color:var(--on-surface-muted); font-size:.82rem; }
 .vendor-records-toolbar { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-bottom:20px; }
@@ -7258,6 +7456,37 @@ h1, h2, h3, h4, h5, h6 {
   flex-direction: column;
   gap: 2px;
 }
+.db-account-menu-wrap { position: relative; }
+.db-account-menu-wrap > .db-nav-link { width: 100%; border: 0; text-align: left; font-family: inherit; cursor: pointer; }
+.db-account-menu {
+  position: absolute;
+  z-index: 220;
+  display: grid;
+  gap: 3px;
+  width: 240px;
+  padding: 7px;
+  background: var(--db-topbar-bg);
+  border: 1px solid var(--db-card-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+}
+.db-sidebar-footer .db-account-menu { bottom: calc(100% + 8px); left: 0; }
+.db-account-menu a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--db-text-muted);
+  font-size: .84rem;
+  text-decoration: none;
+}
+.db-account-menu a i { width: 18px; text-align: center; }
+.db-account-menu a:hover,
+.db-account-menu a.active { background: var(--db-nav-active-bg); color: var(--db-nav-active-color); }
+.db-account-menu-profile .db-account-menu { top: calc(100% + 8px); right: 0; }
+.db-account-menu-profile .db-avatar { border: 0; font-family: inherit; }
 
 /* ── Topbar ── */
 .db-topbar {

@@ -262,10 +262,6 @@ export async function productRecommendations(req, res) {
 export async function create(req, res) {
   const data = productData(req);
 
-  // These are always set by the server — never accepted from client
-  data.submittedBy = req.user._id;
-  data.lastUploadedBy = req.user._id;
-
   // Determine status: admin can create approved products; vendors go to pending/draft
   if (req.user.role === "admin") {
     data.status = "approved";
@@ -274,6 +270,9 @@ export async function create(req, res) {
     VENDOR_PROTECTED_FIELDS.forEach((f) => delete data[f]);
     data.status = data.saveAsDraft === "true" ? "draft" : "pending";
   }
+  // These are always set by the server, after vendor-controlled fields are stripped.
+  data.submittedBy = req.user._id;
+  data.lastUploadedBy = req.user._id;
   delete data.saveAsDraft;
 
   data.slug = await uniqueSlug(data);
@@ -308,11 +307,11 @@ export async function vendorUpdate(req, res) {
     return res
       .status(404)
       .json({ success: false, message: "Product not found" });
-  if (!["draft", "rejected", "changes_requested"].includes(p.status))
+  if (!["draft", "rejected", "changes_requested", "approved", "published"].includes(p.status))
     return res.status(409).json({
       success: false,
       message:
-        "Only drafts, rejected products, or products with requested changes can be edited",
+        "Products already waiting for or undergoing review cannot be edited",
     });
 
   const data = productData(req);
@@ -331,6 +330,11 @@ export async function vendorUpdate(req, res) {
   if (req.files?.length) data.lastUploadedBy = req.user._id;
 
   Object.assign(p, data);
+  p.status = "pending";
+  p.reviewReason = undefined;
+  p.reviewedBy = undefined;
+  p.reviewedAt = undefined;
+  p.publishedAt = undefined;
   if (data.name || data.brand || data.model) p.slug = await uniqueSlug(p);
   try {
     await p.save();
@@ -343,7 +347,7 @@ export async function vendorUpdate(req, res) {
     // Only remove assets no longer represented in the saved document.
     await destroyProductImages(previousImages.filter((image) => !retainedIds.has(image.publicId || image.url))).catch((error) => console.error("Cloudinary cleanup failed", error));
   }
-  res.json({ success: true, message: "Product draft updated", data: p });
+  res.json({ success: true, message: "Product updated and submitted for approval", data: p });
 }
 
 export async function submit(req, res) {
@@ -465,8 +469,8 @@ export async function compare(req, res) {
     return res
       .status(422)
       .json({ success: false, message: "Some selected products are unavailable" });
-  const categories = new Set(products.map((product) => product.category));
-  if (categories.size !== 1)
+  const categories = new Set(products.map((product) => String(product.category || "").trim().toLowerCase()));
+  if (categories.size !== 1 || categories.has(""))
     return res.status(422).json({
       success: false,
       message: "Compare products from the same category only",

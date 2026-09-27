@@ -73,21 +73,26 @@ api.interceptors.request.use((config) => {
 });
 const notifyWishlistChanged = (items) => window.dispatchEvent(new CustomEvent("wishlist-updated", { detail: { count: Array.isArray(items) ? items.length : undefined } }));
 const notifyCartChanged = () => window.dispatchEvent(new Event("cart-updated"));
+const clearCompareQueue = () => {
+  localStorage.setItem("compareProducts", JSON.stringify([]));
+  window.dispatchEvent(new CustomEvent("compare-updated", { detail: { products: [] } }));
+};
+const normalizeProductCategory = (product) => String(product?.category || "").trim().toLowerCase();
+const haveSameProductCategory = (products) => {
+  const categories = products.map(normalizeProductCategory);
+  return categories.length > 0 && categories.every((category) => category && category === categories[0]);
+};
 const addToCompareQueue = (product) => {
   if (!product) return [];
   const compared = JSON.parse(localStorage.getItem("compareProducts") || "[]");
-  if (compared.length > 0 && compared[0]?.category && product.category) {
-    if (compared[0].category.trim().toLowerCase() !== product.category.trim().toLowerCase()) {
-      alert(`Cannot compare products from different categories. All compared products must belong to "${compared[0].category}".`);
-      return compared;
-    }
+  if (compared.length > 0 && !haveSameProductCategory([...compared, product])) {
+    const category = compared[0]?.category || "the selected product category";
+    alert(`Cannot compare products from different or unspecified categories. All compared products must belong to "${category}".`);
+    return compared;
   }
-  const sameCategory = compared.filter(
-    (item) => !item.category || !product.category || item.category.trim().toLowerCase() === product.category.trim().toLowerCase()
-  );
-  const next = sameCategory.some((item) => String(item._id) === String(product._id))
-    ? sameCategory
-    : [...sameCategory, product].slice(0, 4);
+  const next = compared.some((item) => String(item._id) === String(product._id))
+    ? compared
+    : [...compared, product].slice(0, 4);
   localStorage.setItem("compareProducts", JSON.stringify(next));
   window.dispatchEvent(new CustomEvent("compare-updated", { detail: { products: next } }));
   return next;
@@ -623,9 +628,15 @@ function CompareQueue() {
 
   const compareNow = () => {
     if (products.length >= 2) {
+      if (!haveSameProductCategory(products)) {
+        alert("Cannot compare products from different or unspecified categories. Remove products until all selected items share one category.");
+        return;
+      }
+      const selectedIds = products.map((product) => product._id).join(",");
       setOpen(false);
       setShowPicker(false);
-      navigate(`/compare?ids=${products.map((product) => product._id).join(",")}`);
+      navigate(`/compare?ids=${selectedIds}`);
+      clearCompareQueue();
     }
   };
 
@@ -633,7 +644,8 @@ function CompareQueue() {
     const handleCompareChange = (event) => {
       const next = event.detail?.products || [];
       setProducts(next);
-      setOpen(true);
+      setOpen(next.length > 0);
+      if (!next.length) setShowPicker(false);
     };
     window.addEventListener("compare-updated", handleCompareChange);
     return () => window.removeEventListener("compare-updated", handleCompareChange);
@@ -3328,12 +3340,9 @@ function Compare() {
         }
         const savedProducts = JSON.parse(localStorage.getItem("compareProducts") || "[]");
         const fallbackData = buildFallbackCompareData(ids, savedProducts);
-        if (fallbackData?.results?.length > 1) {
-          const cats = new Set(fallbackData.results.map((r) => r.product?.category).filter(Boolean));
-          if (cats.size > 1) {
-            setState({ loading: false, data: null, error: "Compare products from the same category only" });
-            return;
-          }
+        if (fallbackData?.results?.length > 1 && !haveSameProductCategory(fallbackData.results.map((result) => result.product))) {
+          setState({ loading: false, data: null, error: "Compare products from the same specified category only" });
+          return;
         }
         setState({ loading: false, data: fallbackData, error: "" });
       });
@@ -3342,6 +3351,17 @@ function Compare() {
   useEffect(() => {
     load();
   }, [ids]);
+
+  useEffect(() => {
+    const handleLogout = () => {
+      clearCompareQueue();
+      setParams({});
+      setState({ loading: false, data: null, error: "" });
+      setEmptySelected([]);
+    };
+    window.addEventListener("account-logged-out", handleLogout);
+    return () => window.removeEventListener("account-logged-out", handleLogout);
+  }, [setParams]);
 
   // Keep savedWishlist in sync with actual localStorage on load
   useEffect(() => {
@@ -3377,8 +3397,9 @@ function Compare() {
   const addMachine = (product) => {
     const idList = ids.split(",").filter(Boolean);
     if (idList.length >= 4) return;
-    const currentCat = state.data?.results?.[0]?.product?.category;
-    if (currentCat && product?.category && currentCat.trim().toLowerCase() !== product.category.trim().toLowerCase()) {
+    const comparedProducts = state.data?.results?.map((result) => result.product) || [];
+    if (comparedProducts.length && !haveSameProductCategory([...comparedProducts, product])) {
+      const currentCat = comparedProducts[0]?.category || "the selected product category";
       alert(`Cannot compare products from different categories. All compared products must belong to "${currentCat}".`);
       return;
     }
@@ -3498,10 +3519,7 @@ function Compare() {
   };
 
   const handleClearAll = () => {
-    try {
-      localStorage.setItem("compareProducts", JSON.stringify([]));
-      window.dispatchEvent(new CustomEvent("compare-updated", { detail: { products: [] } }));
-    } catch { }
+    clearCompareQueue();
     setParams({});
   };
 
@@ -3595,9 +3613,8 @@ function Compare() {
       if (prev.length > 0) {
         const firstItem = INDUSTRIAL_CATALOG.find((p) => String(p._id) === String(prev[0]));
         const currentItem = INDUSTRIAL_CATALOG.find((p) => String(p._id) === String(productId));
-        if (firstItem?.category && currentItem?.category &&
-            firstItem.category.trim().toLowerCase() !== currentItem.category.trim().toLowerCase()) {
-          alert(`Cannot compare products from different categories. First selected category is "${firstItem.category}".`);
+        if (!haveSameProductCategory([firstItem, currentItem])) {
+          alert(`Cannot compare products from different or unspecified categories. First selected category is "${firstItem?.category || "unspecified"}".`);
           return prev;
         }
       }
@@ -4689,7 +4706,7 @@ function VendorSettingsPage() {
               {tab === "payment" && <SettingsCard title="Payment & bank" description="Bank numbers are masked after saving and are never returned in full."><div className="row g-3">
                 <div className="col-md-6"><label className="vendor-settings-label">Account holder</label><input className="form-control" value={form.bankAccount?.accountName || ""} onChange={(e) => update("bankAccount", { ...(form.bankAccount || {}), accountName: e.target.value })} /></div><div className="col-md-6"><label className="vendor-settings-label">Bank name</label><input className="form-control" value={form.bankAccount?.bankName || ""} onChange={(e) => update("bankAccount", { ...(form.bankAccount || {}), bankName: e.target.value })} /></div><div className="col-md-6"><label className="vendor-settings-label">Account number</label><input className="form-control" type="password" placeholder={form.bankAccount?.accountNumberMasked || "Enter account number"} value={form.bankAccount?.accountNumber || ""} onChange={(e) => update("bankAccount", { ...(form.bankAccount || {}), accountNumber: e.target.value })} /></div><div className="col-md-6"><label className="vendor-settings-label">IFSC</label><input className="form-control" value={form.bankAccount?.ifsc || ""} onChange={(e) => update("bankAccount", { ...(form.bankAccount || {}), ifsc: e.target.value.toUpperCase() })} /></div><div className="col-md-6"><label className="vendor-settings-label">UPI ID</label><input className="form-control" value={form.payoutPreference || ""} onChange={(e) => update("payoutPreference", e.target.value)} /></div>
               </div><SettingsSave saving={state.saving} onSave={saveBank} /></SettingsCard>}
-              {tab === "verification" && <SettingsCard title="Vendor verification" description="Upload your verification documents securely."><div className="vendor-verification-list">{["GST certificate", "Business registration", "PAN card", "Bank verification"].map((name) => { const doc = (form.documents || []).find((item) => item.name === name) || {}; return <div className="vendor-verification-row" key={name}><div><strong>{name}</strong><small>{doc.status || "Not submitted"}</small></div><div><input className="form-control" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(e) => uploadAsset(e.target.files?.[0], "document", name)} /><small className="text-muted">JPG, PNG, WebP, or PDF · max 10 MB</small></div></div>; })}</div></SettingsCard>}
+              {tab === "verification" && <SettingsCard title="Vendor verification" description="Upload your verification documents securely."><div className="vendor-verification-list">{["GST certificate", "Business registration", "PAN card", "Bank verification"].map((name) => { const doc = (form.documents || []).find((item) => item.name === name) || {}; return <div className="vendor-verification-row" key={name}><div><strong>{name}</strong><small>{doc.status || "Not submitted"}</small></div><div><input className="form-control" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(e) => uploadAsset(e.target.files?.[0], "document", name)} /><small className="text-muted">JPG, PNG, WebP, or PDF · max 10 MB</small>{doc.url && <a className="vendor-verification-preview" href={doc.url} target="_blank" rel="noopener noreferrer" aria-label={`Preview ${name}`}><i className="bi bi-eye" /> Preview</a>}</div></div>; })}</div></SettingsCard>}
               {tab === "account" && <SettingsCard title="Account preferences" description="Personalize your workspace and manage access."><div className="row g-3"><div className="col-md-4"><label className="vendor-settings-label">Language</label><select className="form-select" value={form.language || "English"} onChange={(e) => update("language", e.target.value)}><option>English</option><option>Hindi</option></select></div><div className="col-md-4"><label className="vendor-settings-label">Currency</label><select className="form-select" value={form.currency || "INR"} onChange={(e) => update("currency", e.target.value)}><option>INR</option><option>USD</option></select></div><div className="col-md-4"><label className="vendor-settings-label">Timezone</label><input className="form-control" value={form.timezone || "Asia/Kolkata"} onChange={(e) => update("timezone", e.target.value)} /></div></div><SettingsSave saving={state.saving} onSave={() => save({ language: form.language, currency: form.currency, timezone: form.timezone })} /><div className="vendor-danger-zone"><strong>Danger zone</strong><p>Deactivation suspends the vendor account and signs you out.</p><button type="button" className="btn btn-outline-danger" onClick={() => setConfirmDeactivate(true)}>Deactivate account</button><button type="button" className="btn btn-outline-secondary ms-2"               onClick={() => setConfirmLogout(true)}>Log out all devices</button></div></SettingsCard>}
             </>
           )}
@@ -4713,6 +4730,7 @@ function DashboardShell({ children, role, activeNav, title, actions }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchVal, setSearchVal] = useState("");
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [accountMenuAnchor, setAccountMenuAnchor] = useState("");
 
   const currentRole = role || user?.role || "buyer";
 
@@ -4747,15 +4765,7 @@ function DashboardShell({ children, role, activeNav, title, actions }) {
     buyer: [
       { section: "Main" },
       { to: "/dashboard/buyer", label: "Dashboard", icon: "bi-grid-1x2" },
-      { section: "Buyer Account" },
-      { to: "/buyer/account?section=profile", label: "Buyer Profile", icon: "bi-person", sectionKey: "profile" },
-      { to: "/buyer/account?section=addresses", label: "My Addresses", icon: "bi-geo-alt", sectionKey: "addresses" },
       { to: "/buyer/account?section=orders", label: "Orders", icon: "bi-truck", sectionKey: "orders" },
-      { to: "/buyer/account?section=wishlist", label: "Saved Products", icon: "bi-heart", sectionKey: "wishlist" },
-      { to: "/buyer/account?section=requests", label: "Product Requests", icon: "bi-send", sectionKey: "requests" },
-      { to: "/buyer/account?section=payments", label: "Payments", icon: "bi-credit-card", sectionKey: "payments" },
-      { to: "/buyer/account?section=notifications", label: "Notifications", icon: "bi-bell", sectionKey: "notifications" },
-      { to: "/buyer/account?section=security", label: "Account & Security", icon: "bi-shield-lock", sectionKey: "security" },
       { section: "Marketplace" },
       { to: "/products", label: "Inventory & Catalog", icon: "bi-box-seam" },
       { to: "/compare", label: "Reports & Compare", icon: "bi-bar-chart" },
@@ -4764,6 +4774,13 @@ function DashboardShell({ children, role, activeNav, title, actions }) {
     ],
   }[currentRole] || [];
   const buyerSection = new URLSearchParams(location.search).get("section") || "profile";
+  const buyerAccountMenuItems = [
+    ["profile", "Buyer Profile", "bi-person"],
+    ["addresses", "My Addresses", "bi-geo-alt"],
+    ["payments", "Payment Credentials", "bi-credit-card"],
+    ["notifications", "Notifications", "bi-bell"],
+    ["security", "Account & Security", "bi-shield-lock"],
+  ];
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -4827,10 +4844,17 @@ function DashboardShell({ children, role, activeNav, title, actions }) {
         </nav>
 
         <div className="db-sidebar-footer">
-          <Link to={currentRole === "vendor" ? "/vendor/settings" : "/buyer/account?section=security"} className="db-nav-link" title="Settings">
-            <i className="bi bi-gear" />
-            <span>Settings</span>
-          </Link>
+          {currentRole === "buyer" ? (
+            <div className="db-account-menu-wrap">
+              <button type="button" className="db-nav-link" title="Settings" aria-expanded={accountMenuAnchor === "sidebar"} onClick={() => setAccountMenuAnchor((anchor) => anchor === "sidebar" ? "" : "sidebar")}>
+                <i className="bi bi-gear" />
+                <span>Settings</span>
+              </button>
+              {accountMenuAnchor === "sidebar" && <nav className="db-account-menu" aria-label="Buyer account settings">{buyerAccountMenuItems.map(([section, label, icon]) => <Link key={section} to={`/buyer/account?section=${section}`} className={buyerSection === section && location.pathname === "/buyer/account" ? "active" : ""} onClick={() => setAccountMenuAnchor("")}><i className={`bi ${icon}`} /><span>{label}</span></Link>)}</nav>}
+            </div>
+          ) : (
+            <Link to="/vendor/settings" className="db-nav-link" title="Settings"><i className="bi bi-gear" /><span>Settings</span></Link>
+          )}
           <button
             type="button"
             className="db-nav-link text-danger"
@@ -4890,23 +4914,18 @@ function DashboardShell({ children, role, activeNav, title, actions }) {
             <i className="bi bi-shop" /> Marketplace
           </Link>
 
-          <Link
-            to={currentRole === "vendor" ? "/vendor/settings" : currentRole === "buyer" ? "/buyer/account?section=profile" : "/account"}
-            className="db-avatar"
-            title={user?.name || "Profile"}
-            style={{ textDecoration: "none" }}
-          >
-            {currentRole === "vendor" && user?.profile?.logo ? (
-              <img src={user.profile.logo} alt={`${user.name || "Vendor"} logo`} className="db-avatar-image" />
-            ) : user?.name
-              ? user.name
-                  .split(" ")
-                  .map((w) => w[0])
-                  .slice(0, 2)
-                  .join("")
-                  .toUpperCase()
-              : "U"}
-          </Link>
+          {currentRole === "buyer" ? (
+            <div className="db-account-menu-wrap db-account-menu-profile">
+              <button type="button" className="db-avatar" title={user?.name || "Profile"} aria-label="Open buyer profile menu" aria-expanded={accountMenuAnchor === "profile"} onClick={() => setAccountMenuAnchor((anchor) => anchor === "profile" ? "" : "profile")}>
+                {user?.name ? user.name.split(" ").map((word) => word[0]).slice(0, 2).join("").toUpperCase() : "U"}
+              </button>
+              {accountMenuAnchor === "profile" && <nav className="db-account-menu" aria-label="Buyer account">{buyerAccountMenuItems.map(([section, label, icon]) => <Link key={section} to={`/buyer/account?section=${section}`} className={buyerSection === section && location.pathname === "/buyer/account" ? "active" : ""} onClick={() => setAccountMenuAnchor("")}><i className={`bi ${icon}`} /><span>{label}</span></Link>)}</nav>}
+            </div>
+          ) : (
+            <Link to={currentRole === "vendor" ? "/vendor/settings" : "/account"} className="db-avatar" title={user?.name || "Profile"} style={{ textDecoration: "none" }}>
+              {currentRole === "vendor" && user?.profile?.logo ? <img src={user.profile.logo} alt={`${user.name || "Vendor"} logo`} className="db-avatar-image" /> : user?.name ? user.name.split(" ").map((word) => word[0]).slice(0, 2).join("").toUpperCase() : "U"}
+            </Link>
+          )}
         </div>
       </header>
 
@@ -5021,23 +5040,21 @@ function Dashboard() {
   const d = state.data || {};
   const isVendor = user.role === "vendor";
   const isAdmin = user.role === "admin";
+  const vendorRevenue = details.orders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+  const vendorStockUnits = details.products.reduce((sum, product) => sum + (Number(product.stock) || 0), 0);
+  const vendorPendingProducts = details.products.filter((product) => ["pending", "in_review"].includes(String(product.status || "").toLowerCase())).length;
+  const vendorCompletedOrders = details.orders.filter((order) => order.status === "Delivered").length;
+  const vendorOpenOrders = details.orders.filter((order) => !["Delivered", "Cancelled"].includes(order.status)).length;
+  const vendorCancelledOrders = details.orders.filter((order) => order.status === "Cancelled").length;
+  const vendorReturns = details.orders.filter((order) => ["Requested", "Approved", "Refunded"].includes(order.returnStatus)).length;
+  const vendorCategoryCount = new Set(details.products.map((product) => product.category).filter(Boolean)).size;
 
-  // Top Selling products fallback/real
-  const topProducts = details.products.length > 0 ? details.products.slice(0, 5) : [
-    { _id: "p1", name: "Siemens 3-Phase Induction Motor", sold: 30, remaining: 12, price: 18500 },
-    { _id: "p2", name: "Schneider Acti9 32A MCB", sold: 21, remaining: 15, price: 420 },
-    { _id: "p3", name: "L&T Heavy Duty Contactor", sold: 19, remaining: 17, price: 1250 },
-    { _id: "p4", name: "Polycab 4-Core Copper Cable 50m", sold: 16, remaining: 8, price: 5400 },
-  ];
-
-  // Low quantity stock items
-  const lowStockItems = details.products.filter(p => (Number(p.stock) || 0) < 15).length > 0
-    ? details.products.filter(p => (Number(p.stock) || 0) < 15).slice(0, 4)
-    : [
-        { _id: "l1", name: "Tata Salt / Flux Compound", remaining: "10 Packet", status: "Low" },
-        { _id: "l2", name: "ABB Digital Power Meter", remaining: "4 Units", status: "Low" },
-        { _id: "l3", name: "Omron Proximity Sensor E2B", remaining: "6 Units", status: "Low" },
-      ];
+  const topProducts = details.products.slice(0, 5);
+  const lowStockItems = details.products.filter((product) => {
+    if (product.stock === null || product.stock === undefined || product.stock === "") return false;
+    const stock = Number(product.stock);
+    return Number.isFinite(stock) && stock < 15;
+  }).slice(0, 4);
 
   const adminLinks = {
     users: "/admin/users",
@@ -5065,8 +5082,8 @@ function Dashboard() {
                 <i className="bi bi-percent" />
               </div>
               <div className="db-overview-data">
-                <strong>{isAdmin ? (d.orders || 832) : isVendor ? (details.orders.length || 832) : (details.orders.length || 14)}</strong>
-                <span>{isAdmin ? "Total Orders" : isVendor ? "Sales Count" : "Total Orders"}</span>
+                <strong>{isAdmin ? (d.orders || 832) : isVendor ? details.orders.length : (details.orders.length || 14)}</strong>
+                <span>{isAdmin ? "Total Orders" : isVendor ? "Sales orders" : "Total Orders"}</span>
               </div>
             </div>
 
@@ -5075,7 +5092,7 @@ function Dashboard() {
                 <i className="bi bi-currency-rupee" />
               </div>
               <div className="db-overview-data">
-                <strong>{fmt(isVendor ? (details.orders.reduce((sum, o) => sum + (o.total || 0), 0) || 18300) : (d.orders ? d.orders * 4200 : 18300))}</strong>
+                <strong>{fmt(isVendor ? vendorRevenue : (d.orders ? d.orders * 4200 : 18300))}</strong>
                 <span>Revenue</span>
               </div>
             </div>
@@ -5085,8 +5102,8 @@ function Dashboard() {
                 <i className="bi bi-graph-up-arrow" />
               </div>
               <div className="db-overview-data">
-                <strong>{fmt(isVendor ? 868 : (d.products ? d.products * 120 : 868))}</strong>
-                <span>Profit</span>
+                <strong>{isVendor ? vendorCompletedOrders : fmt(d.products ? d.products * 120 : 868)}</strong>
+                <span>{isVendor ? "Delivered orders" : "Profit"}</span>
               </div>
             </div>
 
@@ -5095,8 +5112,8 @@ function Dashboard() {
                 <i className="bi bi-house-door" />
               </div>
               <div className="db-overview-data">
-                <strong>₹ 17,432</strong>
-                <span>Cost</span>
+                <strong>{isVendor ? vendorOpenOrders : "₹ 17,432"}</strong>
+                <span>{isVendor ? "Open orders" : "Cost"}</span>
               </div>
             </div>
           </div>
@@ -5112,8 +5129,8 @@ function Dashboard() {
                 <i className="bi bi-box-seam" />
               </div>
               <div className="db-overview-data">
-                <strong>{d.products || details.products.length || 868}</strong>
-                <span>Quantity in Hand</span>
+                <strong>{isVendor ? vendorStockUnits : d.products || details.products.length || 868}</strong>
+                <span>{isVendor ? "Stock units" : "Quantity in Hand"}</span>
               </div>
             </div>
 
@@ -5122,8 +5139,8 @@ function Dashboard() {
                 <i className="bi bi-geo-alt" />
               </div>
               <div className="db-overview-data">
-                <strong>{d.orders || details.orders.filter(o => o.status !== "Delivered").length || 200}</strong>
-                <span>To be received</span>
+                <strong>{isVendor ? vendorPendingProducts : d.orders || details.orders.filter(o => o.status !== "Delivered").length || 200}</strong>
+                <span>{isVendor ? "Products awaiting approval" : "To be received"}</span>
               </div>
             </div>
           </div>
@@ -5142,8 +5159,8 @@ function Dashboard() {
                 <i className="bi bi-bag-check" />
               </div>
               <div className="db-overview-data">
-                <strong>{details.orders.length || d.orders || 82}</strong>
-                <span>Purchase</span>
+                <strong>{isVendor ? details.orders.length : details.orders.length || d.orders || 82}</strong>
+                <span>{isVendor ? "Sales orders" : "Purchase"}</span>
               </div>
             </div>
 
@@ -5152,8 +5169,8 @@ function Dashboard() {
                 <i className="bi bi-cash-stack" />
               </div>
               <div className="db-overview-data">
-                <strong>₹ 13,573</strong>
-                <span>Cost</span>
+                <strong>{isVendor ? fmt(vendorRevenue) : "₹ 13,573"}</strong>
+                <span>{isVendor ? "Order value" : "Cost"}</span>
               </div>
             </div>
 
@@ -5162,8 +5179,8 @@ function Dashboard() {
                 <i className="bi bi-x-circle" />
               </div>
               <div className="db-overview-data">
-                <strong>{d.pendingProducts || 5}</strong>
-                <span>Cancel</span>
+                <strong>{isVendor ? vendorCancelledOrders : d.pendingProducts || 5}</strong>
+                <span>{isVendor ? "Cancelled orders" : "Cancel"}</span>
               </div>
             </div>
 
@@ -5172,8 +5189,8 @@ function Dashboard() {
                 <i className="bi bi-arrow-return-left" />
               </div>
               <div className="db-overview-data">
-                <strong>₹ 17,432</strong>
-                <span>Return</span>
+                <strong>{isVendor ? vendorReturns : "₹ 17,432"}</strong>
+                <span>{isVendor ? "Returns requested" : "Return"}</span>
               </div>
             </div>
           </div>
@@ -5189,8 +5206,8 @@ function Dashboard() {
                 <i className="bi bi-person-badge" />
               </div>
               <div className="db-overview-data">
-                <strong>{d.vendors || 31}</strong>
-                <span>Number of Suppliers</span>
+                <strong>{isVendor ? (d.offers ?? 0) : d.vendors || 31}</strong>
+                <span>{isVendor ? "Submitted offers" : "Number of Suppliers"}</span>
               </div>
             </div>
 
@@ -5199,8 +5216,8 @@ function Dashboard() {
                 <i className="bi bi-tags" />
               </div>
               <div className="db-overview-data">
-                <strong>{d.offers || 21}</strong>
-                <span>Number of Categories</span>
+                <strong>{isVendor ? vendorCategoryCount : d.offers || 21}</strong>
+                <span>{isVendor ? "Product categories" : "Number of Categories"}</span>
               </div>
             </div>
           </div>
@@ -5208,7 +5225,7 @@ function Dashboard() {
       </div>
 
       {/* ── ROW 3: Sales & Purchase Chart + Order Summary Chart ── */}
-      <div className="db-charts-grid" style={{ marginTop: 20 }}>
+      {!isVendor && <div className="db-charts-grid" style={{ marginTop: 20 }}>
         {/* Sales & Purchase Bar Chart */}
         <div className="db-card" style={{ marginBottom: 0 }}>
           <div className="db-card-header">
@@ -5353,10 +5370,10 @@ function Dashboard() {
             </span>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* ── ROW 4: Top Selling Stock Table + Low Quantity Stock List ── */}
-      <div className="db-charts-grid" style={{ marginTop: 20 }}>
+      {(isAdmin || isVendor) && <div className="db-charts-grid" style={{ marginTop: 20 }}>
         {/* Top Selling Stock */}
         <div className="db-card" style={{ marginBottom: 0 }}>
           <div className="db-card-header">
@@ -5371,6 +5388,7 @@ function Dashboard() {
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>SKU</th>
                   <th>Sold Quantity</th>
                   <th>Remaining Quantity</th>
                   <th>Price</th>
@@ -5380,11 +5398,13 @@ function Dashboard() {
                 {topProducts.map((p) => (
                   <tr key={p._id}>
                     <td className="db-cell-bold">{p.name}</td>
-                    <td>{p.sold || 30}</td>
-                    <td>{p.stock !== undefined ? p.stock : (p.remaining || 12)}</td>
-                    <td>{fmt(p.price || 100)}</td>
+                    <td>{p.sku || "—"}</td>
+                    <td>{p.sold ?? "—"}</td>
+                    <td>{p.stock ?? "—"}</td>
+                    <td>{p.price !== null && p.price !== undefined && p.price !== "" ? fmt(p.price) : "—"}</td>
                   </tr>
                 ))}
+                {!topProducts.length && <tr><td colSpan={5} className="text-center py-3 text-muted">No products available.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -5411,14 +5431,16 @@ function Dashboard() {
                 </div>
                 <div className="db-stock-meta">
                   <strong>{item.name}</strong>
-                  <small>Remaining Quantity : {item.stock !== undefined ? `${item.stock} Units` : (item.remaining || "10 Packet")}</small>
+                  <small>SKU: {item.sku || "—"}</small>
+                  <small>Remaining Quantity: {item.stock ?? "—"}</small>
                 </div>
                 <span className="db-stock-badge-low">Low</span>
               </div>
             ))}
+            {!lowStockItems.length && <div className="text-muted py-3">No low-stock products.</div>}
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Admin Operations Section (Work queue & approvals if admin) */}
       {isAdmin && (
@@ -5801,17 +5823,32 @@ function AdminList() {
         <div className="db-table-wrap">
           <table className="db-table">
             <thead>
-              <tr>
-                <th>Record Details</th>
-                <th>Role / Category</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th>Details</th>
-                <th style={{ textAlign: "right" }}>Actions</th>
-              </tr>
+              {resource === "orders" ? (
+                <tr><th>Order</th><th>Buyer</th><th>Vendor</th><th>Items</th><th>Total</th><th>Status</th><th>Created</th><th style={{ textAlign: "right" }}>Actions</th></tr>
+              ) : (
+                <tr>
+                  <th>Record Details</th>
+                  <th>Role / Category</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Details</th>
+                  <th style={{ textAlign: "right" }}>Actions</th>
+                </tr>
+              )}
             </thead>
             <tbody>
-              {items.map((x) => (
+              {items.map((x) => resource === "orders" ? (
+                <tr key={x._id}>
+                  <td><div className="db-cell-bold">{x.orderNumber || `#${x._id.slice(-6).toUpperCase()}`}</div><small className="db-cell-muted">ID: {x._id.slice(-6)}</small></td>
+                  <td><div className="db-cell-bold">{x.buyer?.name || "—"}</div><small className="db-cell-muted">{x.buyer?.email || ""}</small></td>
+                  <td><div className="db-cell-bold">{x.vendor?.profile?.company || x.vendor?.name || "Platform"}</div><small className="db-cell-muted">{x.vendor?.email || ""}</small></td>
+                  <td><div className="admin-order-items">{(x.items || []).length ? x.items.map((line, index) => <div key={`${line.product || line.name}-${index}`}>{line.quantity || 1} × {line.name || line.product?.name || "Product"}</div>) : "—"}</div></td>
+                  <td className="db-cell-bold">{fmt(x.total)}</td>
+                  <td><span className={`db-badge ${x.status === "Delivered" ? "success" : x.status === "Cancelled" ? "danger" : "warning"}`}>{x.status || "Pending"}</span>{x.returnStatus && x.returnStatus !== "Not requested" && <small className="db-cell-muted d-block mt-1">Return: {x.returnStatus}</small>}</td>
+                  <td className="db-cell-muted">{x.createdAt ? new Date(x.createdAt).toLocaleDateString() : "—"}</td>
+                  <td style={{ textAlign: "right" }}><div className="d-inline-flex gap-1"><button type="button" className="db-btn db-btn-outline db-btn-sm" onClick={() => openEditor(x)} title="Edit"><i className="bi bi-pencil" /></button><button type="button" className="db-btn db-btn-danger db-btn-sm" onClick={() => setConfirmDelete(x)} title="Delete"><i className="bi bi-trash" /></button></div></td>
+                </tr>
+              ) : (
                 <tr key={x._id}>
                   <td>
                     <div className="db-cell-bold">
@@ -5862,6 +5899,7 @@ function AdminList() {
                   </td>
                 </tr>
               ))}
+              {!items.length && <tr><td colSpan={resource === "orders" ? 8 : 6} className="text-center py-4 text-muted">No {resource} found.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -6168,20 +6206,18 @@ function PairExistingProduct() {
           </form>
         </div>
         <div className="col-lg-5">
-          <div className="dashboard-panel">
+          <div className="dashboard-panel vendor-pairing-requests">
             <h3>Your pairing requests</h3>
             {!requests.length ? (
-              <p>No pairing requests yet.</p>
+              <p className="vendor-pairing-empty">No pairing requests yet.</p>
             ) : (
               requests.map((x) => (
                 <div className="offer-row" key={x._id}>
                   <span>
                     <b>{x.product?.name || x.submittedName}</b>
-                    <small className="text-capitalize">
-                      {x.status.replace("_", " ")}
-                    </small>
+                    <small><span className={`db-badge ${x.status === "approved" ? "success" : x.status === "rejected" ? "danger" : "warning"}`}>{(x.status || "pending").replaceAll("_", " ")}</span></small>
                     {x.reviewReason && (
-                      <small className="text-danger">
+                      <small className="pairing-review-note">
                         Admin note: {x.reviewReason}
                       </small>
                     )}
@@ -6749,15 +6785,15 @@ function VendorTools({ mode }) {
           ) : state.loading ? (
             <Loading />
           ) : (
-            <div className="dashboard-panel">
-              <h3 className="text-white">Submitted records</h3>
+            <div className="dashboard-panel vendor-submitted-records">
+              <h3>Submitted records</h3>
               {state.items.map((x) => (
                 <div className="offer-row" key={x._id}>
                   <span>
-                    <b className="text-white">{x.product?.name || x.name}</b>
-                    <small className="text-secondary">{x.status}</small>
+                    <b>{x.product?.name || x.name}</b>
+                    <small>{x.status}</small>
                   </span>
-                  <b className="text-success">{x.price ? fmt(x.price) : x.category}</b>
+                  <b>{x.price ? fmt(x.price) : x.category}</b>
                 </div>
               ))}
             </div>
@@ -6778,8 +6814,11 @@ function ProductSubmission() {
     message: "",
   }),
     [showModal, setShowModal] = useState(false),
+    [editingProduct, setEditingProduct] = useState(null),
+    [editForm, setEditForm] = useState({}),
     [searchQuery, setSearchQuery] = useState(""),
     [filterCategory, setFilterCategory] = useState("all"),
+    [filterApproval, setFilterApproval] = useState("all"),
     [form, setForm] = useState({
       name: "",
       brand: "",
@@ -6807,13 +6846,18 @@ function ProductSubmission() {
   const load = () =>
     api
       .get("/vendor/products")
-      .then((r) =>
+      .then((r) => {
+        const products = Array.isArray(r.data) ? r.data : r.data?.data;
+        if (!Array.isArray(products)) {
+          throw new Error("Unexpected response from the vendor products API.");
+        }
         setState((s) => ({
           ...s,
-          items: Array.isArray(r.data?.data) ? r.data.data : [],
+          items: products,
           loading: false,
-        })),
-      )
+          error: "",
+        }));
+      })
       .catch((e) =>
         setState((s) => ({
           ...s,
@@ -6853,12 +6897,17 @@ function ProductSubmission() {
       );
       data.append("primaryImageIndex", "0");
       images.forEach((img) => data.append("images", img));
-      const res = await api.post("/vendor/products", data);
+      const res = await api.post("/products", data);
+      const submittedProduct = res.data?.data;
+      setFilterApproval("pending");
       setState((s) => ({
         ...s,
         saving: false,
         message: res.data.message || "Product submitted for review.",
         error: "",
+        items: submittedProduct
+          ? [submittedProduct, ...s.items.filter((item) => item._id !== submittedProduct._id)]
+          : s.items,
       }));
       setForm({
         name: "",
@@ -6875,7 +6924,7 @@ function ProductSubmission() {
       setTechPairs([{ name: "", value: "" }]);
       setImages([]);
       setShowModal(false);
-      load();
+      if (!submittedProduct) load();
     } catch (e) {
       setState((s) => ({
         ...s,
@@ -6885,13 +6934,64 @@ function ProductSubmission() {
     }
   };
 
+  const openEdit = (product) => {
+    setEditingProduct(product);
+    setEditForm({
+      name: product.name || "",
+      brand: product.brand || "",
+      model: product.model || "",
+      category: product.category || "Motors",
+      description: product.description || "",
+      price: product.price ?? "",
+      stock: product.stock ?? "",
+    });
+  };
+
+  const saveEdit = async (event) => {
+    event.preventDefault();
+    if (!editingProduct) return;
+    setState((current) => ({ ...current, saving: true, error: "", message: "" }));
+    try {
+      const response = await api.patch(`/vendor/products/${editingProduct._id}`, editForm);
+      const updatedProduct = response.data.data;
+      setState((current) => ({
+        ...current,
+        saving: false,
+        message: response.data.message || "Product updated and submitted for approval.",
+        items: current.items.map((product) => product._id === updatedProduct._id ? updatedProduct : product),
+      }));
+      setFilterApproval("pending");
+      setEditingProduct(null);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        saving: false,
+        error: error.response?.data?.message || error.message || "Unable to update product.",
+      }));
+    }
+  };
+
   const categories = ["Motors", "Space Heaters", "LED Lighting", "Testing Instruments", "MCBs", "Motor Starters", "Contactors", "Switchgear", "Industrial Sensors", "Cables"];
 
+  const getApprovalStatus = (product) => String(product.status ?? product.approvalStatus ?? "pending").toLowerCase();
+  const getStockQuantity = (product) => {
+    if (product.stock === null || product.stock === undefined || product.stock === "") return null;
+    const quantity = Number(product.stock);
+    return Number.isFinite(quantity) ? quantity : null;
+  };
+  const productCategoryCount = new Set(state.items.map((product) => product.category).filter(Boolean)).size;
+  const approvedProductCount = state.items.filter((product) => ["approved", "published"].includes(getApprovalStatus(product))).length;
+  const lowStockCount = state.items.filter((product) => {
+    const quantity = getStockQuantity(product);
+    return quantity !== null && quantity < 5;
+  }).length;
   const filteredItems = state.items.filter((p) => {
     const matchesSearch = !searchQuery || (p.name || "").toLowerCase().includes(searchQuery.toLowerCase()) || (p.brand || "").toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCat = filterCategory === "all" || p.category === filterCategory;
-    return matchesSearch && matchesCat;
+    const matchesApproval = filterApproval === "all" || getApprovalStatus(p) === filterApproval;
+    return matchesSearch && matchesCat && matchesApproval;
   });
+  const waitingApprovalCount = state.items.filter((product) => getApprovalStatus(product) === "pending").length;
 
   return (
     <DashboardShell role="vendor" activeNav="/vendor/products">
@@ -6906,8 +7006,8 @@ function ProductSubmission() {
               <i className="bi bi-grid-3x3-gap" />
             </div>
             <div className="db-overview-data">
-              <strong>{categories.length}</strong>
-              <span>Categories · Last 7 days</span>
+              <strong>{productCategoryCount}</strong>
+              <span>Product categories</span>
             </div>
           </div>
 
@@ -6916,8 +7016,8 @@ function ProductSubmission() {
               <i className="bi bi-box-seam" />
             </div>
             <div className="db-overview-data">
-              <strong>{state.items.length || 868}</strong>
-              <span>Total Products · In Stock</span>
+              <strong>{state.items.length}</strong>
+              <span>Total products</span>
             </div>
           </div>
 
@@ -6926,8 +7026,8 @@ function ProductSubmission() {
               <i className="bi bi-star" />
             </div>
             <div className="db-overview-data">
-              <strong>5</strong>
-              <span>Top Selling · ₹2,500 Cost</span>
+              <strong>{approvedProductCount}</strong>
+              <span>Approved products</span>
             </div>
           </div>
 
@@ -6936,8 +7036,8 @@ function ProductSubmission() {
               <i className="bi bi-exclamation-triangle" />
             </div>
             <div className="db-overview-data">
-              <strong>{state.items.filter(p => (Number(p.stock) || 0) < 5).length || 2}</strong>
-              <span>Low Stocks · Needs Restock</span>
+              <strong>{lowStockCount}</strong>
+              <span>Low stock · below 5</span>
             </div>
           </div>
         </div>
@@ -6994,6 +7094,21 @@ function ProductSubmission() {
             <option value="all">All Categories</option>
             {categories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
+          <select
+            className="db-form-select"
+            style={{ maxWidth: 230 }}
+            value={filterApproval}
+            onChange={(e) => setFilterApproval(e.target.value)}
+            aria-label="Filter by approval status"
+          >
+            <option value="all">All approval statuses</option>
+            <option value="pending">Waiting for approval ({waitingApprovalCount})</option>
+            <option value="in_review">In review</option>
+            <option value="approved">Approved</option>
+            <option value="changes_requested">Changes requested</option>
+            <option value="rejected">Rejected</option>
+            <option value="draft">Draft</option>
+          </select>
         </div>
 
         {/* Table matching Image 2 */}
@@ -7002,41 +7117,68 @@ function ProductSubmission() {
             <thead>
               <tr>
                 <th>Products</th>
+                <th>SKU</th>
                 <th>Buying Price</th>
                 <th>Quantity</th>
-                <th>Threshold Value</th>
-                <th>Expiry / Category</th>
+                <th>Category</th>
                 <th>Availability</th>
+                <th>Approval Status</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {filteredItems.length ? (
                 filteredItems.map((p) => {
-                  const stockNum = Number(p.stock) || 12;
-                  const isLow = stockNum > 0 && stockNum <= 5;
+                  const stockNum = getStockQuantity(p);
+                  const hasStock = stockNum !== null;
+                  const isLow = hasStock && stockNum > 0 && stockNum < 5;
                   const isOut = stockNum === 0;
+                  const status = getApprovalStatus(p);
+                  const approvalStatus = {
+                    pending: "Waiting for approval",
+                    in_review: "In review",
+                    approved: "Approved",
+                    published: "Published",
+                    changes_requested: "Changes requested",
+                    rejected: "Rejected",
+                    draft: "Draft",
+                    archived: "Archived",
+                  }[status] || status.replaceAll("_", " ");
+                  const approvalBadge = ["pending", "in_review", "changes_requested"].includes(status)
+                    ? "warning"
+                    : ["approved", "published"].includes(status)
+                      ? "success"
+                      : status === "rejected"
+                        ? "danger"
+                        : "info";
                   return (
                     <tr key={p._id}>
                       <td className="db-cell-bold">
                         {p.name}
                         {p.brand && <small className="db-cell-muted d-block">{p.brand}</small>}
                       </td>
-                      <td>{fmt(p.price || 430)}</td>
-                      <td>{p.stock !== undefined ? `${p.stock} Packets` : "12 Packets"}</td>
-                      <td className="db-cell-muted">10 Packets</td>
-                      <td className="db-cell-muted">{p.category || "General"}</td>
+                      <td>{p.sku || "—"}</td>
+                      <td>{p.price !== null && p.price !== undefined && p.price !== "" ? fmt(p.price) : "—"}</td>
+                      <td>{hasStock ? stockNum : "—"}</td>
+                      <td className="db-cell-muted">{p.category || "—"}</td>
                       <td>
-                        <span className={`db-badge ${isOut ? "danger" : isLow ? "warning" : "success"}`}>
-                          {isOut ? "Out of stock" : isLow ? "Low stock" : "In- stock"}
-                        </span>
+                        {hasStock
+                          ? <span className={`db-badge ${isOut ? "danger" : isLow ? "warning" : "success"}`}>{isOut ? "Out of stock" : isLow ? "Low stock" : "In stock"}</span>
+                          : <span className="db-badge info">Not set</span>}
+                      </td>
+                      <td><span className={`db-badge ${approvalBadge}`}>{approvalStatus}</span></td>
+                      <td>
+                        {["draft", "rejected", "changes_requested", "approved", "published"].includes(status)
+                          ? <button type="button" className="db-btn db-btn-outline db-btn-sm" onClick={() => openEdit(p)}><i className="bi bi-pencil" /> Edit</button>
+                          : <span className="text-muted">Under review</span>}
                       </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={6} className="text-center py-4 text-muted">
-                    No products listed. Click "Add Product" to create your first listing.
+                  <td colSpan={8} className="text-center py-4 text-muted">
+                    {filterApproval === "pending" ? "No products are waiting for approval." : state.items.length ? "No products match the selected filters." : "No products listed for this vendor."}
                   </td>
                 </tr>
               )}
@@ -7057,6 +7199,35 @@ function ProductSubmission() {
           </button>
         </div>
       </div>
+
+      {editingProduct && (
+        <div className="db-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget && !state.saving) setEditingProduct(null); }}>
+          <form className="db-modal" onSubmit={saveEdit} style={{ maxWidth: 620 }}>
+            <div className="db-modal-header">
+              <h3 className="db-modal-title">Edit product</h3>
+              <button type="button" className="db-modal-close" onClick={() => setEditingProduct(null)} disabled={state.saving} aria-label="Close edit product"><i className="bi bi-x-lg" /></button>
+            </div>
+            <div className="db-modal-body">
+              <p className="text-secondary">Saving changes will send this product back for approval.</p>
+              <div className="db-form-group"><label className="db-form-label">Product name</label><input required className="db-form-input" value={editForm.name || ""} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} /></div>
+              <div className="db-form-row db-form-row-2">
+                <div><label className="db-form-label">Brand</label><input className="db-form-input" value={editForm.brand || ""} onChange={(event) => setEditForm({ ...editForm, brand: event.target.value })} /></div>
+                <div><label className="db-form-label">Model</label><input className="db-form-input" value={editForm.model || ""} onChange={(event) => setEditForm({ ...editForm, model: event.target.value })} /></div>
+              </div>
+              <div className="db-form-group"><label className="db-form-label">Category</label><select className="db-form-select" value={editForm.category || "Motors"} onChange={(event) => setEditForm({ ...editForm, category: event.target.value })}>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
+              <div className="db-form-row db-form-row-2">
+                <div><label className="db-form-label">Price</label><input type="number" min="0" className="db-form-input" value={editForm.price} onChange={(event) => setEditForm({ ...editForm, price: event.target.value })} /></div>
+                <div><label className="db-form-label">Stock</label><input type="number" min="0" className="db-form-input" value={editForm.stock} onChange={(event) => setEditForm({ ...editForm, stock: event.target.value })} /></div>
+              </div>
+              <div className="db-form-group"><label className="db-form-label">Description</label><textarea rows={3} className="db-form-textarea" value={editForm.description || ""} onChange={(event) => setEditForm({ ...editForm, description: event.target.value })} /></div>
+            </div>
+            <div className="db-modal-footer">
+              <button type="button" className="db-btn db-btn-outline" onClick={() => setEditingProduct(null)} disabled={state.saving}>Cancel</button>
+              <button type="submit" className="db-btn db-btn-primary" disabled={state.saving}>{state.saving ? "Saving…" : "Save and wait for approval"}</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* ── Modal matching Image 3 (media_1790321358880.jpg) ── */}
       {showModal && (
@@ -7433,7 +7604,7 @@ function BuyerAccountSection({ section, profile, orders, wishlist, notifications
       {section === "notifications" && <><div className="buyer-account-list">{notifications.length ? notifications.map((notification) => <div className="buyer-account-list-row" key={notification._id}><div><strong>{notification.type || "Account update"}</strong><small>{notification.message}</small></div><small>{new Date(notification.createdAt).toLocaleDateString()}</small></div>) : <div className="buyer-account-placeholder">No notifications.</div>}</div><div className="buyer-account-list">{["orderUpdates", "priceFinder", "promotions", "account"].map((key) => <label className="buyer-account-list-row" key={key}><span>{key === "orderUpdates" ? "Order updates" : key === "priceFinder" ? "Product availability" : key[0].toUpperCase() + key.slice(1)}</span><input type="checkbox" checked={preferences[key] !== false} onChange={(event) => updatePreferences(key, event.target.checked)} /></label>)}</div></>}
       {section === "requests" && <div className="buyer-account-list">{requests.length ? requests.map((request) => <div className="buyer-account-list-row" key={request._id}><div><strong>{request.productName || request.productDetails?.name || "Product request"}</strong><small>{request.status} · {request.productUrl}</small></div>{request.status === "pending" && <button className="btn btn-sm btn-outline-danger" onClick={() => setConfirmAction({ title: "Cancel product request", message: "Are you sure you want to cancel this product request?", confirmText: "Cancel request", action: () => cancelRequest(request) })}>Cancel</button>}</div>) : <div className="buyer-account-placeholder">No product requests yet.</div>}</div>}
       {section === "payments" && <div className="buyer-account-placeholder">No saved payment methods or payment history is available for this buyer account.</div>}
-      {section === "security" && <div className="buyer-account-placeholder"><strong>Account security</strong><br />Password changes remain available in the existing account security flow.<br /><button className="btn btn-outline-danger mt-3" onClick={() => setConfirmAction({ title: "Deactivate buyer account", message: "This will deactivate your buyer account. Continue?", confirmText: "Deactivate account", action: async () => { try { await api.post("/buyer/account/deactivate"); localStorage.removeItem("token"); localStorage.removeItem("user"); window.location.href = "/"; } catch (error) { setFeedback(error.response?.data?.message || error.message); } } })}>Deactivate account</button></div>}
+      {section === "security" && <div className="buyer-account-placeholder"><strong>Account security</strong><br />Password changes remain available in the existing account security flow.<br /><button className="btn btn-outline-danger mt-3" onClick={() => setConfirmAction({ title: "Deactivate buyer account", message: "This will deactivate your buyer account. Continue?", confirmText: "Deactivate account", action: async () => { try { await api.post("/buyer/account/deactivate"); localStorage.removeItem("token"); localStorage.removeItem("user"); clearCompareQueue(); window.dispatchEvent(new Event("account-logged-out")); window.location.href = "/"; } catch (error) { setFeedback(error.response?.data?.message || error.message); } } })}>Deactivate account</button></div>}
       <ConfirmationModal
         isOpen={Boolean(confirmAction)}
         title={confirmAction?.title}
@@ -7603,6 +7774,8 @@ function App() {
     logout = () => {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
+      clearCompareQueue();
+      window.dispatchEvent(new Event("account-logged-out"));
       setUser(null);
     };
   return (
@@ -8537,7 +8710,7 @@ function AdminProductCreate() {
                 <div className="offer-row" key={p._id}>
                   <span>
                     <b>{p.name}</b>
-                    <small className="text-secondary ms-2">{p.brand}</small>
+                    <small>{p.brand ? `${p.brand} · ` : ""}SKU: {p.sku || "—"}</small>
                     <small className="text-capitalize d-block" style={{ color: p.status === "approved" || p.status === "published" ? "var(--color-mint, #4ade80)" : p.status === "pending" ? "#fbbf24" : "#94a3b8" }}>
                       {p.status.replace(/_/g, " ")}
                     </small>

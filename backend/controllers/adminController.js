@@ -372,7 +372,7 @@ const queues = {
     ["product", "buyer"],
   ],
   // H5: orders queue now limited to avoid full-table scans
-  orders: [Order, {}, "orderNumber buyer vendor items total status createdAt", ["buyer", "vendor"]],
+  orders: [Order, {}, "orderNumber buyer vendor items total status returnStatus tracking shippingAddress createdAt", ["buyer", "vendor"]],
 };
 export async function queue(req, res) {
   const entry = queues[req.params.type];
@@ -404,7 +404,7 @@ const resources = {
   products: [
     Product,
     {},
-    "name slug brand model category status rating submittedBy createdAt",
+    "name slug brand model sku category description price stock status rating submittedBy createdAt",
     ["submittedBy"],
   ],
   offers: [
@@ -425,7 +425,7 @@ const resources = {
     "product buyer title rating status createdAt",
     ["product", "buyer"],
   ],
-  orders: [Order, {}, "orderNumber buyer vendor items total status createdAt", ["buyer", "vendor"]],
+  orders: [Order, {}, "orderNumber buyer vendor items total status returnStatus tracking shippingAddress createdAt", ["buyer", "vendor"]],
 };
 
 // ── H1: 'role' is intentionally NOT in editableResourceFields.users ─────────────
