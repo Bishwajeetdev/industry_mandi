@@ -36,6 +36,12 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+      - key: RESEND_API_KEY
+        sync: false # Set a Resend API key in the Render dashboard
+      - key: RESEND_FROM
+        value: Industry Mandi <onboarding@resend.dev>
+      - key: CONTACT_RECIPIENT
+        sync: false # Inbox that should receive contact form messages
 
   # -------------------------------------------------------------
   # TechLens Frontend Static Site

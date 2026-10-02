@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useLayoutEffect, useState, useMemo } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import {
   BrowserRouter,
@@ -14,11 +14,12 @@ import {
 import axios from "axios";
 import gsap from "gsap";
 import { ScrollToPlugin } from "gsap/ScrollToPlugin";
+import { useGSAP } from "@gsap/react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 import "./styles.css";
 import industrialPlantHero from "./assets/industrial-plant-hero.jpg";
-gsap.registerPlugin(ScrollToPlugin);
+gsap.registerPlugin(ScrollToPlugin, useGSAP);
 const resolveApiUrl = (envUrl) => {
   if (envUrl && envUrl.trim()) {
     let url = envUrl.trim();
@@ -1649,7 +1650,16 @@ function Home() {
       })
     : fallbackProducts;
 
-  const categories = [["bi-gear-wide-connected", "Motors & Drives"], ["bi-cpu", "CNC Machining"], ["bi-droplet-half", "Pumps & Hydraulics"], ["bi-diagram-3", "Process Automation"], ["bi-lightning-charge", "Power & Switchgear"], ["bi-speedometer2", "Testing Instruments"], ["bi-power", "Motor Starters"], ["bi-broadcast-pin", "Sensors & Telemetry"], ["bi-bezier2", "Cables & Wiring"], ["bi-shield-check", "Safety Gear"]];
+  const categoryIcons = {
+    motors: "bi-gear-wide-connected", drives: "bi-speedometer2", cnc: "bi-cpu", pumps: "bi-droplet-half",
+    hydraulic: "bi-droplet-half", automation: "bi-diagram-3", switchgear: "bi-lightning-charge",
+    testing: "bi-speedometer2", starter: "bi-power", sensor: "bi-broadcast-pin", telemetry: "bi-broadcast-pin",
+    cable: "bi-bezier2", wiring: "bi-bezier2", safety: "bi-shield-check", lighting: "bi-lightbulb",
+  };
+  const categories = useMemo(() => [...new Set(products.map((product) => String(product.category || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b))
+    .slice(0, 10)
+    .map((name) => [Object.entries(categoryIcons).find(([term]) => name.toLowerCase().includes(term))?.[1] || "bi-box-seam", name]), [products]);
   const brands = ["SIEMENS", "ABB", "SCHNEIDER ELECTRIC", "L&T HEAVY ENG", "KIRLOSKAR", "DANFOSS", "CROMPTON", "HAVELLS INDUSTRIAL", "HONEYWELL"];
   const benefits = [["bi-truck", "Pan-India Freight Logistics", "Heavy equipment transport with real-time transit telemetry"], ["bi-patch-check", "Verified Manufacturer Specs", "Zero counterfeit risk with direct OEM test reports"], ["bi-shield-lock", "Escrow Milestone Payments", "Funds released strictly upon physical gate inspection"], ["bi-calculator", "Direct OEM Bulk Pricing", "Volume-tier matrix pricing without middleman markups"], ["bi-cpu", "AI-Powered Spec Matching", "Automated pairing of exact equipment equivalents"]];
   const promos = [{ title: "Precision CNC Centers.", copy: "Sub-micron accuracy and automated tool changers.", className: "promo-cobalt", icon: "bi-cpu" }, { title: "Severe-Duty Motors.", copy: "IE3/IE4 efficiency ratings with IP55 protection.", className: "promo-blue", icon: "bi-gear-wide-connected" }, { title: "Process Automation.", copy: "Field-programmable controllers and telemetry nodes.", className: "promo-ink", icon: "bi-diagram-3" }];
@@ -1905,7 +1915,7 @@ function Home() {
         </div>
         <div className="category-rail">
           {categories.map(([icon, name]) => (
-            <Link to={`/products?category=${name}`} className="category-tile" key={name}>
+            <Link to={`/products?category=${encodeURIComponent(name)}`} className="category-tile" key={name} aria-label={`Browse ${name} products`}>
               <div className="category-icon">
                 <i className={`bi ${icon}`} />
               </div>
@@ -2241,31 +2251,46 @@ function ContactLegacy() {
 function Products() {
   const fallbackProducts = INDUSTRIAL_CATALOG;
 
-  const [state, setState] = useState({ loading: true, items: [], error: "" }),
+  const [state, setState] = useState({ loading: true, items: [], facets: { categories: [], brands: [] }, error: "" }),
     [searchParams, setSearchParams] = useSearchParams(),
     [query, setQuery] = useState(searchParams.get("q") || ""),
     [chosen, setChosen] = useState([]),
-    [compareMessage, setCompareMessage] = useState("");
-  const load = () => {
+    [compareMessage, setCompareMessage] = useState(""),
+    [priceError, setPriceError] = useState("");
+  const selectedCategory = searchParams.get("category") || "";
+  const selectedBrand = searchParams.get("brand") || "";
+  const minPrice = searchParams.get("minPrice") || "";
+  const maxPrice = searchParams.get("maxPrice") || "";
+  const load = (nextQuery = query, nextCategory = selectedCategory, nextBrand = selectedBrand, nextMinPrice = minPrice, nextMaxPrice = maxPrice) => {
     setState((s) => ({ ...s, loading: true, error: "" }));
     api
-      .get("/products", { params: { q: query } })
+      .get("/products", { params: { ...(nextQuery.trim() ? { q: nextQuery.trim() } : {}), ...(nextCategory ? { category: nextCategory } : {}), ...(nextBrand ? { brand: nextBrand } : {}), ...(nextMinPrice ? { minPrice: nextMinPrice } : {}), ...(nextMaxPrice ? { maxPrice: nextMaxPrice } : {}) } })
       .then((r) =>
-        setState({ loading: false, items: Array.isArray(r.data?.data?.items) ? r.data.data.items : [], error: "" }),
+        setState({ loading: false, items: Array.isArray(r.data?.data?.items) ? r.data.data.items : [], facets: r.data?.data?.filters || { categories: [], brands: [] }, error: "" }),
       )
       .catch((error) =>
         setState({
           loading: false,
           items: [],
-          error: error.response?.data?.message || error.message,
+          facets: { categories: [], brands: [] }, error: error.response?.data?.message || error.message,
         }),
       );
   };
   useEffect(() => {
     const nextQuery = searchParams.get("q") || "";
+    const nextCategory = searchParams.get("category") || "";
+    const nextBrand = searchParams.get("brand") || "";
+    const nextMinPrice = searchParams.get("minPrice") || "";
+    const nextMaxPrice = searchParams.get("maxPrice") || "";
     setQuery(nextQuery);
-    load(nextQuery);
+    load(nextQuery, nextCategory, nextBrand, nextMinPrice, nextMaxPrice);
   }, [searchParams]);
+  const updateFilters = (updates) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(updates).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
+    setSearchParams(next);
+  };
+  const clearFilters = () => setSearchParams({});
   const toggle = (p) => {
     if (chosen.length > 0 && chosen[0].category !== p.category) {
       setCompareMessage(`Choose another ${chosen[0].category} product to compare.`);
@@ -2280,7 +2305,10 @@ function Products() {
     });
   };
   // Use fallback products when backend returns nothing
-  const displayItems = state.items.length > 0 || query.trim() ? state.items : fallbackProducts;
+  const hasFilters = Boolean(query.trim() || selectedCategory || selectedBrand || minPrice || maxPrice);
+  const displayItems = state.items.length > 0 || hasFilters ? state.items : fallbackProducts;
+  const categories = state.facets.categories.length ? state.facets.categories : [...new Set(fallbackProducts.map((product) => product.category).filter(Boolean))].sort();
+  const brands = state.facets.brands.length ? state.facets.brands : [...new Set(fallbackProducts.map((product) => product.brand).filter(Boolean))].sort();
   const groupedProducts = displayItems.reduce((groups, product) => {
     const category = product.category || "Other machinery";
     (groups[category] ||= []).push(product);
@@ -2293,11 +2321,12 @@ function Products() {
         <h1>Explore Industrial Machinery &amp; Equipment</h1>
         <p className="lead text-secondary">Direct OEM procurement, verified manufacturer pricing, and benchmark telemetry across motors, CNCs, pumps, and process automation.</p>
       </div>
+      {selectedCategory && <div className="catalog-category-filter" role="status"><span><i className="bi bi-funnel-fill" /> Showing products in <strong>{selectedCategory}</strong></span><button type="button" onClick={() => updateFilters({ category: "" })}>Clear category <i className="bi bi-x-lg" /></button></div>}
       <form
         onSubmit={(e) => {
           e.preventDefault();
           const nextQuery = query.trim();
-          setSearchParams(nextQuery ? { q: nextQuery } : {});
+          updateFilters({ q: nextQuery });
         }}
         className="searchbox mt-4"
       >
@@ -2310,7 +2339,15 @@ function Products() {
         <kbd className="search-shortcut-badge">⌘K</kbd>
         <button className="btn btn-primary">Search Catalog</button>
       </form>
-      <div className="mt-4 d-flex justify-content-between align-items-center">
+      <div className="catalog-layout mt-4">
+        <aside className="catalog-filter-panel" aria-label="Filter products">
+          <div className="catalog-filter-heading"><div><span>REFINE RESULTS</span><h2>Filters</h2></div>{hasFilters && <button type="button" onClick={clearFilters}>Clear all</button>}</div>
+          <div className="catalog-filter-group"><label htmlFor="catalog-category">Category</label><select id="catalog-category" value={selectedCategory} onChange={(event) => updateFilters({ category: event.target.value })}><option value="">All categories</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></div>
+          <div className="catalog-filter-group"><label htmlFor="catalog-brand">Brand</label><select id="catalog-brand" value={selectedBrand} onChange={(event) => updateFilters({ brand: event.target.value })}><option value="">All brands</option>{brands.map((brand) => <option key={brand} value={brand}>{brand}</option>)}</select></div>
+          <form key={`${minPrice}-${maxPrice}`} className="catalog-price-filter" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const nextMin = data.get("minPrice")?.trim() || ""; const nextMax = data.get("maxPrice")?.trim() || ""; if (nextMin && nextMax && Number(nextMin) > Number(nextMax)) { setPriceError("Minimum price cannot exceed maximum price."); return; } setPriceError(""); updateFilters({ minPrice: nextMin, maxPrice: nextMax }); }}><label>Price range</label><div><input name="minPrice" type="number" min="0" inputMode="numeric" defaultValue={minPrice} placeholder="Min price" /><span>to</span><input name="maxPrice" type="number" min="0" inputMode="numeric" defaultValue={maxPrice} placeholder="Max price" /></div>{priceError && <small className="catalog-price-error">{priceError}</small>}<button type="submit"><i className="bi bi-check2" /> Apply price</button></form>
+        </aside>
+        <section className="catalog-results">
+      <div className="d-flex justify-content-between align-items-center catalog-results-summary">
         <span className="font-monospace small text-secondary">
           <i className="bi bi-shield-check text-success me-1" />
           {displayItems.length} verified industrial SKUs on-grid
@@ -2363,6 +2400,8 @@ function Products() {
           ))}
         </div>
       )}
+        </section>
+      </div>
     </main>
   );
 }
@@ -4455,16 +4494,17 @@ function ApprovalQueues() {
       );
   };
   return (
-    <section className="dashboard-panel mt-4">
-      <div className="d-flex flex-wrap gap-2 justify-content-between align-items-center">
-        <div>
+    <section className="dashboard-panel mt-4 approval-queues">
+      <div className="approval-queues-header">
+        <div className="approval-queues-title">
+          <span className="approval-queues-kicker"><i className="bi bi-shield-check" /> ADMIN WORKSPACE</span>
           <h3 className="mb-0">Approval queues</h3>
           <small className="text-secondary">
             Every public record requires this review.
           </small>
         </div>
         <select
-          className="form-select w-auto"
+          className="form-select approval-queues-select"
           value={kind}
           onChange={(e) => setKind(e.target.value)}
         >
@@ -4474,14 +4514,14 @@ function ApprovalQueues() {
         </select>
       </div>
       {state.loading ? (
-        <div className="py-3">Loading queue…</div>
+        <div className="approval-queues-loading"><span className="spinner-border spinner-border-sm" /> Loading queue…</div>
       ) : state.error ? (
-        <div className="alert alert-danger mt-3">{state.error}</div>
+        <div className="alert alert-danger approval-queues-alert"><i className="bi bi-exclamation-circle me-2" />{state.error}</div>
       ) : !state.items.length ? (
-        <p className="text-secondary mt-3 mb-0">No pending {kind}.</p>
+        <div className="approval-queues-empty"><i className="bi bi-check2-circle" /><div><strong>All caught up</strong><span>No pending {kind} are waiting for review.</span></div></div>
       ) : (
-        <div className="table-responsive mt-3">
-          <table className="table align-middle">
+        <div className="table-responsive approval-queues-table-wrap">
+          <table className="table align-middle approval-queues-table">
             <thead>
               <tr>
                 <th>Submission</th>
@@ -4530,7 +4570,7 @@ function ApprovalQueues() {
                       "Awaiting review"
                     )}
                   </td>
-                  <td className="d-flex gap-2">
+                  <td className="approval-queues-actions">
                     <button
                       className="btn btn-sm btn-primary"
                       onClick={() => decide(x, "approved")}
@@ -4746,11 +4786,6 @@ function DashboardShell({ children, role, activeNav, title, actions }) {
       { to: "/admin/vendors", label: "Suppliers", icon: "bi-shop" },
       { to: "/admin/users", label: "Users & Teams", icon: "bi-people" },
       { to: "/admin/orders", label: "Orders", icon: "bi-truck" },
-      { section: "Analytics & Control" },
-      { to: "/admin/analytics", label: "Reports", icon: "bi-bar-chart" },
-      { to: "/admin/ai", label: "AI Copilot", icon: "bi-robot" },
-      { to: "/admin/notifications", label: "Notifications", icon: "bi-bell" },
-      { to: "/admin/settings", label: "Settings", icon: "bi-gear" },
     ],
     vendor: [
       { section: "Main" },
@@ -5575,13 +5610,17 @@ function formatAddress(address) { return address ? [address.line1, address.line2
 
 function AdminList() {
   const { resource } = useParams(),
-    [params] = useSearchParams(),
+    [params, setParams] = useSearchParams(),
     [state, setState] = useState({ loading: true, items: [], error: "" }),
     [editor, setEditor] = useState(null),
     [productImageFiles, setProductImageFiles] = useState([]),
     [notice, setNotice] = useState(""),
     [confirmDelete, setConfirmDelete] = useState(null),
-    status = params.get("status") || "";
+    [filterOpen, setFilterOpen] = useState(false),
+    status = params.get("status") || "",
+    source = params.get("source") || "",
+    search = params.get("q") || "";
+  const [orderSearch, setOrderSearch] = useState(search);
   const resourceFields = {
     users: [
       { key: "name", label: "Full name", type: "text" },
@@ -5644,7 +5683,7 @@ function AdminList() {
   const load = () => {
     setState((s) => ({ ...s, loading: true, error: "" }));
     api
-      .get(`/admin/resources/${resource}`)
+      .get(`/admin/resources/${resource}`, search ? { params: { q: search } } : undefined)
       .then((r) =>
         setState({
           loading: false,
@@ -5662,7 +5701,8 @@ function AdminList() {
   };
   useEffect(() => {
     load();
-  }, [resource]);
+  }, [resource, search]);
+  useEffect(() => setOrderSearch(search), [search]);
   useEffect(() => {
     if (!editor) return undefined;
     const handleKeyDown = (event) => {
@@ -5716,9 +5756,18 @@ function AdminList() {
   };
   if (state.loading) return <Loading label={`Loading ${resource}…`} />;
   if (state.error) return <ErrorState message={state.error} onRetry={load} />;
-  const items = status
-    ? state.items.filter((x) => x.status === status)
-    : state.items;
+  const items = state.items.filter((order) => {
+    const matchesStatus = !status || order.status === status;
+    const matchesSource = source !== "admin" || order.items?.some((item) => item.product?.submittedBy?.role === "admin");
+    return matchesStatus && matchesSource;
+  });
+  const setOrderFilter = (key, value) => {
+    const next = { status, source, q: search };
+    if (value) next[key] = value;
+    else delete next[key];
+    setParams(Object.fromEntries(Object.entries(next).filter(([, current]) => current)));
+    setFilterOpen(false);
+  };
   const title = `${status ? `${status} ` : ""}${resource}`;
     return (
     <DashboardShell
@@ -5819,9 +5868,33 @@ function AdminList() {
         <div className="db-card-header">
           <h3 className="db-card-title">{items.length} Record{items.length === 1 ? "" : "s"} Available</h3>
           <div className="d-flex gap-2">
-            <button type="button" className="db-btn db-btn-outline db-btn-sm">
+            {resource === "orders" ? <div className="position-relative">
+              <button type="button" className={`db-btn db-btn-outline db-btn-sm ${status || source ? "active" : ""}`} onClick={() => setFilterOpen((open) => !open)} aria-expanded={filterOpen}>
+                <i className="bi bi-sliders me-1" /> Filters{source === "admin" && <span className="ms-1">(Admin catalog)</span>}{status && <span className="ms-1">({status})</span>}
+              </button>
+              {filterOpen && <div className="db-filter-menu">
+                <form onSubmit={(event) => { event.preventDefault(); setOrderFilter("q", orderSearch.trim()); }}>
+                  <label className="db-form-label" htmlFor="admin-order-search">Search order ID</label>
+                  <div className="d-flex gap-2">
+                    <input id="admin-order-search" className="db-form-input" value={orderSearch} onChange={(event) => setOrderSearch(event.target.value)} placeholder="ORD-... or Mongo ID" />
+                    <button type="submit" className="db-btn db-btn-primary db-btn-sm" title="Search orders"><i className="bi bi-search" /></button>
+                  </div>
+                </form>
+                <label className="db-form-label mt-3" htmlFor="admin-order-status-filter">Order status</label>
+                <select id="admin-order-status-filter" className="db-form-select" value={status} onChange={(event) => setOrderFilter("status", event.target.value)}>
+                  <option value="">All statuses</option>
+                  {statusOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
+                <label className="db-form-label mt-3" htmlFor="admin-order-source-filter">Product source</label>
+                <select id="admin-order-source-filter" className="db-form-select" value={source} onChange={(event) => setOrderFilter("source", event.target.value)}>
+                  <option value="">All products</option>
+                  <option value="admin">Admin catalog</option>
+                </select>
+                {(status || source || search) && <button type="button" className="db-btn db-btn-outline db-btn-sm mt-2 w-100" onClick={() => { setOrderSearch(""); setParams({}); setFilterOpen(false); }}>Clear filters</button>}
+              </div>}
+            </div> : <button type="button" className="db-btn db-btn-outline db-btn-sm">
               <i className="bi bi-sliders me-1" /> Filters
-            </button>
+            </button>}
             <button type="button" className="db-btn db-btn-outline db-btn-sm">
               <i className="bi bi-download me-1" /> Download all
             </button>
@@ -5850,7 +5923,7 @@ function AdminList() {
                   <td><div className="db-cell-bold">{x.orderNumber || `#${x._id.slice(-6).toUpperCase()}`}</div><small className="db-cell-muted">ID: {x._id.slice(-6)}</small></td>
                   <td><div className="db-cell-bold">{x.buyer?.name || "—"}</div><small className="db-cell-muted">{x.buyer?.email || ""}</small></td>
                   <td><div className="db-cell-bold">{x.vendor?.profile?.company || x.vendor?.name || "Platform"}</div><small className="db-cell-muted">{x.vendor?.email || ""}</small></td>
-                  <td><div className="admin-order-items">{(x.items || []).length ? x.items.map((line, index) => <div key={`${line.product || line.name}-${index}`}>{line.quantity || 1} × {line.name || line.product?.name || "Product"}</div>) : "—"}</div></td>
+                  <td><div className="admin-order-items">{(x.items || []).length ? x.items.map((line, index) => <div key={`${line.product?._id || line.product || line.name}-${index}`}>{line.quantity || 1} × {line.name || line.product?.name || "Product"}{line.product?.submittedBy?.role === "admin" && <small className="db-badge success ms-1">Admin catalog</small>}</div>) : "—"}</div></td>
                   <td className="db-cell-bold">{fmt(x.total)}</td>
                   <td><span className={`db-badge ${x.status === "Delivered" ? "success" : x.status === "Cancelled" ? "danger" : "warning"}`}>{x.status || "Pending"}</span>{x.returnStatus && x.returnStatus !== "Not requested" && <small className="db-cell-muted d-block mt-1">Return: {x.returnStatus}</small>}</td>
                   <td className="db-cell-muted">{x.createdAt ? new Date(x.createdAt).toLocaleDateString() : "—"}</td>
@@ -6253,6 +6326,7 @@ function CartPage() {
   const [addressSaving, setAddressSaving] = useState(false);
   const [addressError, setAddressError] = useState("");
   const [message, setMessage] = useState("");
+  const [orderPlaced, setOrderPlaced] = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authForm, setAuthForm] = useState({ email: "", password: "" });
@@ -6327,6 +6401,7 @@ function CartPage() {
       return;
     }
     setCheckingOut(true);
+    setOrderPlaced(false);
     try {
       const payload = items.map((item) => ({
         product: item._id || item.product,
@@ -6341,8 +6416,10 @@ function CartPage() {
       setItems([]);
       notifyCartChanged();
       setMessage(`Order placed successfully${numbers ? `: ${numbers}` : "! Direct OEM allocation confirmed."}`);
+      setOrderPlaced(true);
       setShowAuthModal(false);
     } catch (e) {
+      setOrderPlaced(false);
       setMessage(e.response?.data?.message || e.message || "Unable to place order.");
     } finally {
       setCheckingOut(false);
@@ -6387,7 +6464,10 @@ function CartPage() {
       <span className="eyebrow dark">ENTERPRISE PROCUREMENT CART</span>
       <h1>Industrial Order Review</h1>
       <p className="text-secondary">Review your machinery allocation and direct OEM shipment lines before order dispatch.</p>
-      {message && <div className="alert alert-info mt-3">{message}</div>}
+      {message && <div className={`alert ${orderPlaced ? "alert-success" : "alert-info"} mt-3 d-flex align-items-center justify-content-between gap-3 flex-wrap`}>
+        <span>{message}</span>
+        {orderPlaced && <Link to="/buyer/account?section=orders" className="btn btn-sm btn-outline-success">Track your orders <i className="bi bi-arrow-right ms-1" /></Link>}
+      </div>}
       {!items.length ? (
         <div className="empty-state">
           <i className="bi bi-box-seam" />
@@ -7590,9 +7670,11 @@ function BuyerAccountDashboard() {
   }, [requestedSection]);
 
   useEffect(() => {
+    let active = true;
     const loadBuyerAccount = () => {
       Promise.all([api.get("/account"), api.get("/buyer/wishlist"), api.get("/buyer/notifications"), api.get("/buyer/addresses"), api.get("/buyer/product-requests"), api.get("/buyer/notification-preferences")])
         .then(([accountResponse, wishlistResponse, notificationResponse, addressResponse, requestResponse, preferenceResponse]) => {
+          if (!active) return;
           const data = accountResponse.data.data || {};
           setState({
             loading: false,
@@ -7606,13 +7688,27 @@ function BuyerAccountDashboard() {
             error: "",
           });
         })
-        .catch((error) => setState((current) => ({
+        .catch((error) => active && setState((current) => ({
           ...current,
           loading: false,
           error: error.response?.data?.message || error.message || "Unable to load your account.",
         })));
     };
+    const refreshOrders = () => {
+      api.get("/account")
+        .then((response) => {
+          if (active) setState((current) => ({ ...current, orders: response.data.data?.orders || [] }));
+        })
+        .catch(() => {});
+    };
     loadBuyerAccount();
+    window.addEventListener("focus", refreshOrders);
+    const refreshTimer = window.setInterval(refreshOrders, 15000);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshOrders);
+      window.clearInterval(refreshTimer);
+    };
   }, []);
 
   const section = buyerAccountSections.find(([key]) => key === activeSection) || buyerAccountSections[0];
@@ -7645,6 +7741,7 @@ function BuyerAccountDashboard() {
 }
 
 function BuyerAccountSection({ section, profile, orders, wishlist, notifications, addresses, requests, preferences, onReload }) {
+  const navigate = useNavigate();
   const content = {
     profile: ["Personal information", "Your name, contact details, and buyer identity will appear here."],
     addresses: ["Saved addresses", "Add, edit, remove, and select a default delivery address."],
@@ -7688,9 +7785,20 @@ function BuyerAccountSection({ section, profile, orders, wishlist, notifications
     try { await api.patch("/buyer/notification-preferences", { [key]: value }); setFeedback("Notification preference saved."); }
     catch (error) { setFeedback(error.response?.data?.message || error.message); }
   };
+  const orderItemsSummary = (order) => (order.items || []).map((item) => `${item.name || item.product?.name || "Product"} × ${item.quantity || 1} · ${fmt((item.price || 0) * (item.quantity || 1))}`).join(" · ");
   const invoice = (order) => {
-    const blob = new Blob([`Industry Mandi invoice\nOrder: ${order.orderNumber}\nTotal: ${fmt(order.total)}\nStatus: ${order.status}`], { type: "text/plain" });
+    const deliveryAddress = [order.shippingAddress?.label, order.shippingAddress?.line1, order.shippingAddress?.line2, [order.shippingAddress?.city, order.shippingAddress?.state, order.shippingAddress?.postalCode].filter(Boolean).join(", "), order.shippingAddress?.country].filter(Boolean).join("\n");
+    const productDetails = (order.items || []).map((item, index) => {
+      const product = typeof item.product === "object" ? item.product : {};
+      const quantity = item.quantity || 1;
+      return `${index + 1}. ${item.name || product.name || "Product"}\n   Product ID: ${product._id || item.product || "N/A"}\n   Quantity: ${quantity}\n   Unit price: ${fmt(item.price)}\n   Line total: ${fmt((item.price || 0) * quantity)}`;
+    }).join("\n\n");
+    const blob = new Blob([`Industry Mandi invoice\n========================\nInvoice: ${order.invoiceNumber || "N/A"}\nOrder: ${order.orderNumber || "N/A"}\nDate: ${order.createdAt ? new Date(order.createdAt).toLocaleString() : "N/A"}\nStatus: ${order.status || "Pending"}\n\nPRODUCT DETAILS\n----------------\n${productDetails || "No product details available."}\n\nTOTAL\n-----\nOrder total: ${fmt(order.total)}\n\nDELIVERY ADDRESS\n----------------\n${deliveryAddress || "No delivery address available."}\n\nTracking: ${order.tracking?.carrier || "Not assigned"}${order.tracking?.number ? ` ${order.tracking.number}` : ""}`], { type: "text/plain" });
     const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${order.orderNumber || "invoice"}.txt`; link.click(); URL.revokeObjectURL(link.href);
+  };
+  const openOrderProduct = (order) => {
+    const product = order.items?.find((item) => item.product)?.product;
+    if (product) navigate(`/product/${product.slug || product._id}`);
   };
   const address = form.businessAddress || {};
   return (
@@ -7700,7 +7808,7 @@ function BuyerAccountSection({ section, profile, orders, wishlist, notifications
       {feedback && <div className="alert alert-info buyer-account-feedback">{feedback}</div>}
       {section === "profile" && <form className="buyer-account-form" onSubmit={saveProfile}><input required placeholder="Full name" value={form.name || ""} onChange={(event) => update("name", event.target.value)} /><input disabled placeholder="Email" value={form.email || ""} /><input placeholder="Phone number" value={form.phone || ""} onChange={(event) => update("phone", event.target.value)} /><input type="date" placeholder="Date of birth" value={form.dateOfBirth ? String(form.dateOfBirth).slice(0, 10) : ""} onChange={(event) => update("dateOfBirth", event.target.value)} /><select value={form.gender || ""} onChange={(event) => update("gender", event.target.value)}><option value="">Gender</option><option value="female">Female</option><option value="male">Male</option><option value="non-binary">Non-binary</option><option value="prefer-not-to-say">Prefer not to say</option></select><button className="btn btn-primary" disabled={saving}>{saving ? "Saving…" : "Save profile"}</button></form>}
       {section === "addresses" && <><form className="buyer-account-form" onSubmit={async (event) => { event.preventDefault(); try { await api.post("/buyer/addresses", newAddress); setNewAddress({ label: "Home", line1: "", city: "", state: "", postalCode: "", country: "India", isDefault: false }); onReload(); } catch (error) { setFeedback(error.response?.data?.message || error.message); } }}><input placeholder="Label (Home / Work)" value={newAddress.label} onChange={(event) => setNewAddress({ ...newAddress, label: event.target.value })} /><input required placeholder="Address line 1" value={newAddress.line1} onChange={(event) => setNewAddress({ ...newAddress, line1: event.target.value })} /><input required placeholder="City" value={newAddress.city} onChange={(event) => setNewAddress({ ...newAddress, city: event.target.value })} /><input required placeholder="State" value={newAddress.state} onChange={(event) => setNewAddress({ ...newAddress, state: event.target.value })} /><input required placeholder="Postal code" value={newAddress.postalCode} onChange={(event) => setNewAddress({ ...newAddress, postalCode: event.target.value })} /><label><input type="checkbox" checked={newAddress.isDefault} onChange={(event) => setNewAddress({ ...newAddress, isDefault: event.target.checked })} /> Set as default</label><button className="btn btn-primary">Add address</button></form><div className="buyer-account-list">{addresses.length ? addresses.map((item) => <div className="buyer-account-list-row" key={item._id}><div><strong>{item.label || "Saved address"} {item.isDefault && <span className="db-badge success ms-2">Default</span>}</strong><small>{[item.line1, item.line2, item.city, item.state, item.postalCode].filter(Boolean).join(", ")}</small></div><button className="btn btn-sm btn-outline-danger" onClick={() => setConfirmAction({ title: "Delete address", message: "Are you sure you want to delete this saved address?", confirmText: "Delete address", action: async () => { try { await api.delete(`/buyer/addresses/${item._id}`); onReload(); } catch (error) { setFeedback(error.response?.data?.message || error.message); } } })}>Delete</button></div>) : <div className="buyer-account-placeholder">No saved addresses yet.</div>}</div></>}
-      {section === "orders" && <div className="buyer-account-list">{orders.length ? orders.map((order) => <div className="buyer-account-list-row" key={order._id}><div><strong>{order.orderNumber || "Order"}</strong><small>{order.items?.length || 0} items · {fmt(order.total)}</small></div><span className="db-badge info">{order.status}</span><div className="buyer-account-row-actions"><button className="btn btn-sm btn-outline-primary" onClick={() => invoice(order)}>Invoice</button>{order.status !== "Cancelled" && order.status !== "Delivered" && <button className="btn btn-sm btn-outline-danger" onClick={() => setConfirmAction({ title: "Cancel order", message: `Are you sure you want to cancel ${order.orderNumber || "this order"}?`, confirmText: "Cancel order", action: () => cancelOrder(order) })}>Cancel</button>}</div></div>) : <div className="buyer-account-placeholder">No orders yet.</div>}</div>}
+      {section === "orders" && <div className="buyer-account-list">{orders.length ? orders.map((order) => <div className="buyer-account-list-row" key={order._id} onClick={() => openOrderProduct(order)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openOrderProduct(order); } }} role={order.items?.some((item) => item.product) ? "link" : undefined} tabIndex={order.items?.some((item) => item.product) ? 0 : undefined} style={order.items?.some((item) => item.product) ? { cursor: "pointer" } : undefined}><div><strong>{order.orderNumber || "Order"}</strong><small>{orderItemsSummary(order)}</small><strong>{fmt(order.total)}</strong></div><span className="db-badge info">{order.status}</span><div className="buyer-account-row-actions" onClick={(event) => event.stopPropagation()}><button className="btn btn-sm btn-outline-primary" onClick={() => invoice(order)}>Invoice</button>{order.status !== "Cancelled" && order.status !== "Delivered" && <button className="btn btn-sm btn-outline-danger" onClick={() => setConfirmAction({ title: "Cancel order", message: `Are you sure you want to cancel ${order.orderNumber || "this order"}?`, confirmText: "Cancel order", action: () => cancelOrder(order) })}>Cancel</button>}</div></div>) : <div className="buyer-account-placeholder">No orders yet.</div>}</div>}
       {section === "wishlist" && <div className="buyer-account-list">{wishlist.length ? wishlist.map((product) => <div className="buyer-account-list-row" key={product._id}><div><strong>{product.name}</strong><small>{product.category || "Saved product"}</small></div><span>{fmt(getDisplayPrice(product))}</span><button className="btn btn-sm btn-outline-danger" onClick={() => removeWishlist(product)}>Remove</button></div>) : <div className="buyer-account-placeholder">No saved products.</div>}</div>}
       {section === "notifications" && <><div className="buyer-account-list">{notifications.length ? notifications.map((notification) => <div className="buyer-account-list-row" key={notification._id}><div><strong>{notification.type || "Account update"}</strong><small>{notification.message}</small></div><small>{new Date(notification.createdAt).toLocaleDateString()}</small></div>) : <div className="buyer-account-placeholder">No notifications.</div>}</div><div className="buyer-account-list">{["orderUpdates", "priceFinder", "promotions", "account"].map((key) => <label className="buyer-account-list-row" key={key}><span>{key === "orderUpdates" ? "Order updates" : key === "priceFinder" ? "Product availability" : key[0].toUpperCase() + key.slice(1)}</span><input type="checkbox" checked={preferences[key] !== false} onChange={(event) => updatePreferences(key, event.target.checked)} /></label>)}</div></>}
       {section === "requests" && <div className="buyer-account-list">{requests.length ? requests.map((request) => <div className="buyer-account-list-row" key={request._id}><div><strong>{request.productName || request.productDetails?.name || "Product request"}</strong><small>{request.status} · {request.productUrl}</small></div>{request.status === "pending" && <button className="btn btn-sm btn-outline-danger" onClick={() => setConfirmAction({ title: "Cancel product request", message: "Are you sure you want to cancel this product request?", confirmText: "Cancel request", action: () => cancelRequest(request) })}>Cancel</button>}</div>) : <div className="buyer-account-placeholder">No product requests yet.</div>}</div>}
@@ -7742,117 +7850,32 @@ function Account() {
   function OrderRow({ order, vendor: isVendor, onCancel: cancelOrder, onUpdate: updateOrder, onInvoice: downloadInvoice }) { return <article className="account-order"><div className="order-main"><div><strong>#{order.orderNumber || order._id.slice(-8).toUpperCase()}</strong><span>{new Date(order.createdAt).toLocaleDateString()} · {fmt(order.total)}</span></div><span className={`order-status status-${order.status.toLowerCase().replaceAll(" ", "-")}`}>{order.status}</span></div><div className="order-progress">{["Pending", "Confirmed", "Shipped", "Out for Delivery", "Delivered"].map((status) => <span className={status === order.status ? "current" : ["Shipped", "Out for Delivery", "Delivered"].indexOf(status) <= ["Shipped", "Out for Delivery", "Delivered"].indexOf(order.status) && order.status !== "Pending" ? "done" : ""} key={status}><i />{status}</span>)}</div><p className="order-meta">{order.tracking?.number ? `Tracking: ${order.tracking.carrier || "Carrier"} ${order.tracking.number}` : "Tracking will appear when the order ships."} · Return/refund: {order.returnStatus || "Not requested"}</p><div className="order-actions"><button className="btn btn-sm btn-outline-primary" onClick={() => downloadInvoice(order)}><i className="bi bi-download me-1" />Invoice</button>{isVendor ? <select className="form-select form-select-sm" value={order.status} onChange={(e) => updateOrder(order._id, e.target.value)}><option>Confirmed</option><option>Processing</option><option>Shipped</option><option>Delivered</option><option>Cancelled</option></select> : !["Delivered", "Cancelled", "Shipped"].includes(order.status) && <button className="btn btn-sm btn-outline-danger" onClick={() => cancelOrder(order._id)}>Cancel order</button>}</div></article>; }
 }
 
-function SmoothScrollEffects() {
+function SmoothScrollEffects({ pageRef }) {
   const location = useLocation();
 
-  useLayoutEffect(() => {
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const page = document.querySelector("main");
+  useGSAP(() => {
+    const page = pageRef.current;
     if (!page) return undefined;
 
-    if (reduceMotion) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       window.scrollTo(0, 0);
       return undefined;
     }
 
-    const cleanupHandlers = [];
-    const context = gsap.context(() => {
-      gsap.fromTo(
-        page,
-        { autoAlpha: 0, y: 12 },
-        { autoAlpha: 1, y: 0, duration: 0.55, ease: "power2.out", clearProps: "transform" },
-      );
-      gsap.fromTo(
-        page.querySelectorAll(".dashboard-panel, .admin-crm-kpi, .metric, .product-card, .offer-panel, .section-heading"),
-        { autoAlpha: 0, y: 16 },
-        { autoAlpha: 1, y: 0, duration: 0.5, stagger: 0.045, delay: 0.08, ease: "power2.out", clearProps: "transform" },
-      );
-      gsap.to(window, { scrollTo: { y: 0, autoKill: true }, duration: 0.6, ease: "power2.out" });
-
-      gsap.to(page.querySelectorAll(".telemetry-pip, .telemetry-card .bi-broadcast-pin"), {
-        opacity: 0.45,
-        scale: 0.82,
-        duration: 1.15,
-        repeat: -1,
-        yoyo: true,
-        stagger: 0.12,
-        ease: "sine.inOut",
-      });
-
-      const hoverTargets = [
-        ...page.querySelectorAll(".admin-crm-kpi, .admin-module-card, .product-card, .market-product-card, .admin-queue-item"),
-      ];
-      const interactiveTargets = [...page.querySelectorAll(".btn, .icon-action, .admin-modal-close")];
-      hoverTargets.forEach((element) => {
-        const enter = () => gsap.to(element, { y: -4, duration: 0.24, ease: "power2.out", overwrite: "auto" });
-        const leave = () => gsap.to(element, { y: 0, duration: 0.32, ease: "power2.out", overwrite: "auto" });
-        element.addEventListener("mouseenter", enter);
-        element.addEventListener("mouseleave", leave);
-        cleanupHandlers.push(() => {
-          element.removeEventListener("mouseenter", enter);
-          element.removeEventListener("mouseleave", leave);
-        });
-      });
-
-      interactiveTargets.forEach((element) => {
-        const enter = () => gsap.to(element, { scale: 1.025, duration: 0.2, ease: "power2.out", overwrite: "auto" });
-        const leave = () => gsap.to(element, { scale: 1, duration: 0.25, ease: "power2.out", overwrite: "auto" });
-        const press = () => gsap.fromTo(element, { scale: 0.96 }, { scale: 1, duration: 0.3, ease: "back.out(2)", overwrite: "auto" });
-        element.addEventListener("mouseenter", enter);
-        element.addEventListener("mouseleave", leave);
-        element.addEventListener("click", press);
-        cleanupHandlers.push(() => {
-          element.removeEventListener("mouseenter", enter);
-          element.removeEventListener("mouseleave", leave);
-          element.removeEventListener("click", press);
-        });
-      });
-
-      const arrowLinks = [...page.querySelectorAll(".product-details-link, .admin-queue-item, .view-link")];
-      arrowLinks.forEach((element) => {
-        const arrow = element.querySelector(".bi-arrow-right, .bi-arrow-up-right, .bi-chevron-right");
-        if (!arrow) return;
-        const enter = () => gsap.to(arrow, { x: 4, duration: 0.22, ease: "power2.out", overwrite: "auto" });
-        const leave = () => gsap.to(arrow, { x: 0, duration: 0.28, ease: "power2.out", overwrite: "auto" });
-        element.addEventListener("mouseenter", enter);
-        element.addEventListener("mouseleave", leave);
-        cleanupHandlers.push(() => {
-          element.removeEventListener("mouseenter", enter);
-          element.removeEventListener("mouseleave", leave);
-        });
-      });
-
-    }, page);
-
-    return () => {
-      cleanupHandlers.forEach((cleanup) => cleanup());
-      context.revert();
-    };
-  }, [location.key]);
-
-  useEffect(() => {
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const handleAnchorClick = (event) => {
-      const link = event.currentTarget;
-      const targetId = link.getAttribute("href")?.slice(1);
-      const target = targetId ? document.getElementById(targetId) : null;
-      if (!target) return;
-      event.preventDefault();
-      if (reduceMotion) {
-        target.scrollIntoView();
-        return;
-      }
-      gsap.to(window, { scrollTo: { y: target, offsetY: 24, autoKill: true }, duration: 0.8, ease: "power3.out" });
-    };
-    const anchors = [...document.querySelectorAll('a[href^="#"]')];
-    anchors.forEach((anchor) => anchor.addEventListener("click", handleAnchorClick));
-    return () => anchors.forEach((anchor) => anchor.removeEventListener("click", handleAnchorClick));
-  }, [location.key]);
+    gsap.fromTo(
+      page,
+      { autoAlpha: 0, y: 12 },
+      { autoAlpha: 1, y: 0, duration: 0.55, ease: "power2.out", clearProps: "transform" },
+    );
+    gsap.to(window, { scrollTo: { y: 0, autoKill: true }, duration: 0.6, ease: "power2.out" });
+    return undefined;
+  }, { dependencies: [location.key], scope: pageRef, revertOnUpdate: true });
 
   return null;
 }
 
 function App() {
+  const pageRef = useRef(null);
   const [user, setUser] = useState(() =>
     JSON.parse(localStorage.getItem("user") || "null"),
   );
@@ -7882,9 +7905,10 @@ function App() {
   return (
     <Auth.Provider value={{ user, login, logout, updateUser }}>
       <BrowserRouter>
-        <SmoothScrollEffects />
+        <SmoothScrollEffects pageRef={pageRef} />
         <PublicChrome />
-        <RouteBoundary>
+        <div ref={pageRef}>
+          <RouteBoundary>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/about" element={<About />} />
@@ -8044,7 +8068,8 @@ function App() {
             />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </RouteBoundary>
+          </RouteBoundary>
+        </div>
         <PublicFooter />
       </BrowserRouter>
     </Auth.Provider>
@@ -8086,12 +8111,12 @@ createRoot(document.getElementById("root")).render(<App />);
 // ─── Price Finder ─────────────────────────────────────────────────────────────
 
 const SUPPORTED_PLATFORMS = [
-  { id: "amazon_in",     name: "Amazon India",   color: "#FF9900" },
-  { id: "flipkart",      name: "Flipkart",       color: "#2874F0" },
-  { id: "indiamart",     name: "IndiaMART",      color: "#E87722" },
-  { id: "tradeindia",    name: "TradeIndia",     color: "#F58220" },
-  { id: "industrybuying",name: "IndustryBuying", color: "#1A73E8" },
-  { id: "moglix",        name: "Moglix",         color: "#E53935" },
+  { id: "amazon_in",      name: "Amazon India",    color: "#FF9900", logo: "/platforms/amazon.webp" },
+  { id: "flipkart",       name: "Flipkart",        color: "#2874F0", logo: "/platforms/flipkart.webp" },
+  { id: "indiamart",      name: "IndiaMART",       color: "#E87722", logo: "/platforms/indiamart-transparent.png" },
+  { id: "tradeindia",     name: "TradeIndia",      color: "#F58220", logo: "/platforms/tradeindia-transparent.png" },
+  { id: "industrybuying", name: "IndustryBuying",  color: "#1A73E8", logo: "/platforms/industrybuying-transparent.png" },
+  { id: "moglix",         name: "Moglix",          color: "#E53935", logo: "/platforms/moglix-transparent.png" },
 ];
 
 function detectPlatformClient(url) {
@@ -8111,7 +8136,7 @@ function PfAvailBadge({ av }) {
   return <span className="pf-avail-badge out"><i className="bi bi-x-circle" /> Out of Stock</span>;
 }
 
-function PfMatchedCard({ product }) {
+function PfMatchedCard({ product, pastedPrice }) {
   const primary = (product.images || []).find((x) => x.isPrimary) || (product.images || [])[0];
   const image = typeof primary === "string" ? primary : primary?.url;
   const fallback = "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=400&q=80";
@@ -8130,6 +8155,16 @@ function PfMatchedCard({ product }) {
           {product.sku && <span><strong>{product.sku}</strong> · SKU</span>}
           {product.category && <span><strong>{product.category}</strong> · Category</span>}
           {product.rating > 0 && <span><i className="bi bi-star-fill text-warning" /> <strong>{product.rating.toFixed(1)}</strong></span>}
+        </div>
+        <div className="pf-match-prices" aria-label="Price comparison">
+          <div className="pf-match-price our-price">
+            <span><i className="bi bi-shop-window" /> Industry Mandi price</span>
+            <strong>{product.price != null ? `₹${Number(product.price).toLocaleString("en-IN")}` : "Not available"}</strong>
+          </div>
+          <div className="pf-match-price pasted-price">
+            <span><i className="bi bi-link-45deg" /> Pasted website price</span>
+            <strong>{pastedPrice != null && pastedPrice > 0 ? `₹${Number(pastedPrice).toLocaleString("en-IN")}` : "Not available"}</strong>
+          </div>
         </div>
         {specEntries.length > 0 && (
           <div className="product-spec-chips mb-2">
@@ -8263,7 +8298,7 @@ function PriceFinder() {
         {/* Hero / Input */}
         <section className="pf-hero">
           <span className="eyebrow dark">PRICE INTELLIGENCE</span>
-          <h1>Paste a Product Link · Find a Product</h1>
+          <h1>Paste a Product Link · Find Best Price</h1>
           <p>
             Paste any industrial product URL from Amazon, Flipkart, IndiaMART, Moglix, and more.
             We extract product details, check for an exact catalog product, then suggest relevant alternatives.
@@ -8274,7 +8309,7 @@ function PriceFinder() {
               {detectedPlatform && (
                 <div className="pf-detect-pill" style={{ color: detectedPlatform.color }}>
                   <span className="pip" style={{ background: detectedPlatform.color }} />
-                  {detectedPlatform.name}
+                  <img src={detectedPlatform.logo} alt={detectedPlatform.name} className="pf-detect-logo" />
                 </div>
               )}
               <input
@@ -8285,7 +8320,7 @@ function PriceFinder() {
                 required
               />
               <button type="submit" disabled={state.loading}>
-                {state.loading ? <><i className="bi bi-arrow-repeat spin me-1" />Matching…</> : <><i className="bi bi-search me-1" />Find Product</>}
+                {state.loading ? <><i className="bi bi-arrow-repeat spin me-1" />Matching…</> : <><i className="bi bi-search me-1" />Find Best Price</>}
               </button>
             </div>
           </form>
@@ -8297,9 +8332,9 @@ function PriceFinder() {
                 key={p.id}
                 className={`pf-platform-chip ${detectedPlatform?.id === p.id ? "active" : ""}`}
                 style={detectedPlatform?.id === p.id ? { color: p.color } : {}}
+                title={p.name}
               >
-                <span className="pf-dot" style={{ background: p.color }} />
-                {p.name}
+                <img src={p.logo} alt={p.name} className={`pf-platform-logo ${p.id}`} />
               </span>
             ))}
           </div>
@@ -8332,21 +8367,30 @@ function PriceFinder() {
                 <p>{state.data.extractionError?.message || "Unable to retrieve product information from this URL."}</p>
               </div>
             ) : state.data.matched ? (
-              <PfMatchedCard product={state.data.matched} />
+              <PfMatchedCard product={state.data.matched} pastedPrice={state.data.extracted?.price} />
+            ) : state.data.similar?.length > 0 ? (
+              <div className="dashboard-panel mb-4 p-3 border rounded" style={{ background: "rgba(37, 99, 235, 0.08)", borderColor: "rgba(37, 99, 235, 0.25)" }}>
+                <div className="d-flex align-items-center gap-2 mb-1">
+                  <i className="bi bi-search text-primary" style={{ fontSize: "1.2rem" }} />
+                  <h3 className="mb-0 fs-5">Matching Catalog Products Found ({state.data.similar.length})</h3>
+                </div>
+                <p className="small text-secondary mb-0">
+                  We found products in our catalog related to keywords from your submitted link. Click any product below to compare prices and view full details.
+                </p>
+                {state.data.extractionWarning && <p className="small text-warning mt-2 mb-0">{state.data.extractionWarning}</p>}
+              </div>
             ) : (
               <div className="pf-no-match">
                 <i className="bi bi-search" />
-                <h3>{state.data.matchType === "similar" ? "Exact product not found" : "No exact product found in our catalog"}</h3>
-                <p>
-                  {state.data.matchType === "similar" ? "These are similar products, not exact matches." : "The product was extracted successfully, but no exact catalog match was found."}
-                </p>
+                <h3>No matching products found in our catalog</h3>
+                <p>The product details were extracted, but no matching catalog items or related keywords were found.</p>
                 {state.data.extractionWarning && <p className="small text-warning mb-3">{state.data.extractionWarning}</p>}
-                {state.data.matchType === "none" && (requestState.message ? <div className="alert alert-success mb-0">{requestState.message}</div> : <>
+                {requestState.message ? <div className="alert alert-success mb-0">{requestState.message}</div> : <>
                   {requestState.error && <div className="alert alert-danger">{requestState.error}</div>}
                   <button type="button" className="btn btn-primary mt-2" disabled={requestState.saving} onClick={requestProduct}>
                     {requestState.saving ? "Submitting…" : <><i className="bi bi-plus-circle me-2" />Request This Product</>}
                   </button>
-                </>)}
+                </>}
               </div>
             )}
 
@@ -8441,11 +8485,11 @@ function PriceFinder() {
               <div>
                 <div className="d-flex align-items-center justify-content-between mb-3">
                   <div>
-                    <span className="eyebrow dark d-block">RELATED PRODUCTS</span>
+                    <span className="eyebrow dark d-block">{state.data.matched ? "RELATED PRODUCTS" : "MATCHING PRODUCTS"}</span>
                     <h3 className="mt-1 mb-0">
-                      {state.data.extracted?.category
-                        ? `More ${state.data.extracted.category} products`
-                        : "More matching products"}
+                      {state.data.matched
+                        ? (state.data.extracted?.category ? `More ${state.data.extracted.category} products` : "More matching products")
+                        : "Products matching your link keywords"}
                     </h3>
                   </div>
                 </div>
@@ -8485,7 +8529,41 @@ function PriceFinder() {
                             <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{p.category}</div>
                             <div style={{ fontSize: "0.72rem", color: "var(--primary)", marginTop: 4, fontWeight: 600 }}>{p.confidence}% relevance</div>
                             {p.price > 0 && <div style={{ fontWeight: 800, color: "#22c55e", marginTop: 6 }}>{fmtPrice(p.price)}</div>}
-                            <div style={{ fontSize: "0.72rem", color: "var(--primary)", marginTop: 6, fontWeight: 600 }}>Select this product <i className="bi bi-arrow-right" /></div>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-primary mt-2 w-100"
+                              style={{ fontSize: "0.76rem", padding: "4px 8px" }}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setState((prev) => ({
+                                  ...prev,
+                                  data: {
+                                    ...prev.data,
+                                    matched: p,
+                                    matchType: "similar",
+                                    offers: prev.data.offers?.length ? prev.data.offers : [
+                                      {
+                                        platform: "Industry Mandi",
+                                        platform_color: "#3b82f6",
+                                        seller: "Direct OEM Partner",
+                                        price: p.price,
+                                        mrp: p.price ? Math.round(p.price * 1.15) : null,
+                                        discount: 13,
+                                        availability: "in_stock",
+                                        shipping: 0,
+                                        last_updated: new Date(),
+                                        url: `/product/${p.slug || p._id}`,
+                                        source: "internal",
+                                        fetch_required: false,
+                                      }
+                                    ]
+                                  }
+                                }));
+                              }}
+                            >
+                              <i className="bi bi-check2-circle me-1" /> View Best Price Table
+                            </button>
                           </div>
                         </div>
                       </Link>

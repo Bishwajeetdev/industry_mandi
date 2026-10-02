@@ -192,10 +192,24 @@ export async function list(req, res) {
     items = items.filter((x) => ids.some((id) => String(id) === String(x._id)));
   }
 
+  const facetFilter = { status: { $in: publicStatuses } };
+  const [categories, brands] = await Promise.all([
+    Product.distinct("category", facetFilter),
+    Product.distinct("brand", facetFilter),
+  ]);
+
   res.json({
     success: true,
     message: "Products retrieved successfully",
-    data: { items, page: pageNum, total: await Product.countDocuments(filter) },
+    data: {
+      items,
+      page: pageNum,
+      total: await Product.countDocuments(filter),
+      filters: {
+        categories: categories.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+        brands: brands.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      },
+    },
   });
 }
 

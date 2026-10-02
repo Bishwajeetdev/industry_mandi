@@ -65,6 +65,8 @@ Because this repository contains [`render.yaml`](./render.yaml), Render can auto
    * **`techlens-web`** (Frontend Static Site)
 5. Fill in the required environment variable:
    * **`MONGODB_URI`**: Paste your MongoDB Atlas connection string from Step 2.
+   * **`RESEND_API_KEY`**: Paste an API key from [Resend](https://resend.com/api-keys).
+   * **`CONTACT_RECIPIENT`**: The inbox that should receive contact form messages.
 6. Click **Apply**.
 7. Render will automatically build and deploy both services!
 
@@ -91,6 +93,9 @@ If you prefer to configure the services manually on Render instead of using Blue
    * `JWT_SECRET`: `<Generate a 32+ character random string>`
    * `JWT_EXPIRES_IN`: `7d`
    * `CLIENT_URL`: `https://techlens-web.onrender.com` *(Update once frontend URL is created)*
+   * `RESEND_API_KEY`: `<Your Resend API key>`
+   * `RESEND_FROM`: `Industry Mandi <onboarding@resend.dev>` for Resend test mode, or a sender address on your verified domain
+   * `CONTACT_RECIPIENT`: `<Inbox that should receive contact form messages>`
 5. Click **Create Web Service**.
 
 ### B. Deploy Frontend Static Site

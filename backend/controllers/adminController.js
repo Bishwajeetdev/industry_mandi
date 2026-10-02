@@ -7,6 +7,7 @@ import RankingConfiguration from "../models/RankingConfiguration.js";
 import AuditLog from "../models/AuditLog.js";
 import Notification from "../models/Notification.js";
 import Order from "../models/Order.js";
+import mongoose from "mongoose";
 import crypto from "crypto";
 import { destroyProductImages } from "../services/cloudinaryService.js";
 const recipients = {
@@ -448,11 +449,27 @@ export async function resourceList(req, res) {
       .json({ success: false, message: "Resource not found" });
   const [Model, filter, fields, populate] = entry;
   let query = Model.find(filter).select(fields);
+  if (req.params.type === "orders") {
+    const search = String(req.query.q || "").trim().slice(0, 100);
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const conditions = [{ orderNumber: { $regex: escaped, $options: "i" } }];
+      if (mongoose.Types.ObjectId.isValid(search)) conditions.push({ _id: search });
+      query = query.or(conditions);
+    }
+  }
   for (const field of populate)
     query = query.populate(
       field,
       field === "product" ? "name slug" : "name email profile.company",
     );
+  if (req.params.type === "orders") {
+    query = query.populate({
+      path: "items.product",
+      select: "name slug sku price submittedBy",
+      populate: { path: "submittedBy", select: "name email role" },
+    });
+  }
   const data = await query.sort("-createdAt").limit(200);
   res.json({ success: true, message: `${req.params.type} retrieved`, data });
 }
