@@ -1,8 +1,10 @@
+@tailwind utilities;
+
 /* ==========================================================================
    INDUSTRY MANDI — PRECISION SPEC MATRIX DESIGN SYSTEM
-   Stitch Project: projects/15678012963426101869
    Palette: Dark Obsidian, Industrial Slate, Electric Brand Orange, Mint Telemetry
    ========================================================================== */
+
 
 :root {
   /* Surface Layers — Light Theme */
@@ -312,13 +314,29 @@ h1, h2, h3, h4, h5, h6 {
   white-space: nowrap;
 }
 
+/* Logo icon wrapper — used in the main navbar */
 .brand-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--brand-orange);
-  box-shadow: var(--shadow-orange-glow);
-  display: inline-block;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--brand-orange-subtle, rgba(255,77,38,0.1));
+  border: 1px solid var(--brand-orange-subtle, rgba(255,77,38,0.18));
+  overflow: hidden;
+  padding: 4px;
+  box-shadow: 0 1px 4px rgba(255,77,38,0.12);
+}
+
+.brand-dot img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  /* Tint the black icon to brand orange */
+  filter: brightness(0) saturate(100%) invert(36%) sepia(90%) saturate(600%) hue-rotate(348deg) brightness(100%);
 }
 
 .brand-subtext {
@@ -700,7 +718,7 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 1.8rem;
   font-family: var(--font-headline);
   line-height: 1.1;
-  color: #fff;
+  color: #030101;
   margin: 4px 0;
 }
 
@@ -2108,6 +2126,7 @@ h1, h2, h3, h4, h5, h6 {
   text-transform: uppercase;
 }
 
+/* Footer brand-dot — restore as a small orange glowing circle (no image) */
 .market-footer .brand-dot {
   width: 10px;
   height: 10px;
@@ -2115,6 +2134,7 @@ h1, h2, h3, h4, h5, h6 {
   background: var(--brand-orange, #ff4d26);
   box-shadow: 0 0 12px rgba(255, 77, 38, 0.6);
   display: inline-block;
+  flex-shrink: 0;
 }
 
 .footer-top p {
@@ -6027,7 +6047,7 @@ h1, h2, h3, h4, h5, h6 {
 @media (max-width: 600px) {
   .navbar { padding: 10px 0; }
   .navbar-brand { font-size: 1rem; gap: 7px; }
-  .brand-dot { width: 8px; height: 8px; }
+  .navbar .brand-dot { width: 28px; height: 28px; }
   .brand-subtext { font-size: 0.55rem; }
   .market-search { padding-left: 11px; }
   .market-search input { font-size: 0.75rem; }
@@ -6647,7 +6667,8 @@ h1, h2, h3, h4, h5, h6 {
 @media (max-width: 420px) {
   .container { padding-inline: 12px; }
   .navbar > .container { padding-inline: 12px; }
-  .navbar-brand .brand-name { font-size: 0.92rem; }
+  .navbar .brand-dot { width: 26px; height: 26px; }
+  .navbar-brand .brand-name { font-size: 0.88rem; }
   .market-search button { font-size: 0.7rem; padding-inline: 10px; }
   .hero-actions .btn { width: 100%; }
   .metric { min-height: 118px; padding: 15px; }
@@ -8960,3 +8981,168 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--db-primary);
   font-weight: 600;
 }
+
+/* ==========================================================================
+   PRODUCT IMAGE MANAGER — Edit modal (vendor + admin)
+   ========================================================================== */
+.pim-section-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--db-text-muted);
+  margin: 0 0 10px;
+}
+
+.pim-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.pim-thumb {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid var(--db-card-border);
+  background: #f8f9fa;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.pim-thumb:hover { border-color: var(--db-primary); box-shadow: 0 0 0 3px var(--db-primary-light); }
+.pim-thumb.is-primary { border-color: var(--brand-orange); box-shadow: 0 0 0 3px var(--brand-orange-subtle); }
+
+.pim-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.pim-thumb-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 5px;
+  transition: background 0.15s;
+}
+.pim-thumb:hover .pim-thumb-overlay { background: rgba(0,0,0,0.35); }
+
+.pim-thumb-del {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #dc2626;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  opacity: 0;
+  transition: opacity 0.15s, transform 0.15s;
+  transform: scale(0.8);
+  line-height: 1;
+  padding: 0;
+}
+.pim-thumb:hover .pim-thumb-del { opacity: 1; transform: scale(1); }
+
+.pim-primary-badge {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--brand-orange);
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 5px;
+  pointer-events: none;
+}
+
+.pim-set-primary {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  background: rgba(255,255,255,0.9);
+  color: var(--db-text);
+  border: 1px solid var(--db-card-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.pim-thumb:hover .pim-set-primary { opacity: 1; }
+
+.pim-new-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.pim-new-thumb {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid var(--db-primary);
+  background: #f0f7ff;
+}
+.pim-new-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.pim-new-thumb-del {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #dc2626;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  padding: 0;
+  line-height: 1;
+}
+
+.pim-upload-zone {
+  border: 2px dashed var(--db-card-border);
+  border-radius: 10px;
+  padding: 16px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: #fafbfc;
+  margin-bottom: 6px;
+}
+.pim-upload-zone:hover {
+  border-color: var(--db-primary);
+  background: #f0f7ff;
+}
+.pim-upload-zone input { display: none; }
+.pim-upload-zone i { font-size: 1.4rem; color: var(--db-text-muted); margin-bottom: 6px; display: block; }
+.pim-upload-zone span { font-size: 0.8rem; color: var(--db-text-muted); }
+.pim-upload-zone strong { color: var(--db-primary); font-weight: 600; }
+.pim-hint { font-size: 0.73rem; color: var(--db-text-muted); margin-bottom: 0; }
+.pim-divider { border: 0; border-top: 1px solid var(--db-card-border); margin: 20px 0; }
