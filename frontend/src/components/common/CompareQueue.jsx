@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../api/api";
-import { fmt, getDisplayPrice } from "../../utils/helpers";
-import { clearCompareQueue, removeFromCompareQueue, addToCompareQueue } from "../../utils/compareStorage";
+import { fmt, getDisplayPrice, haveSameProductCategory } from "../../utils/helpers";
+import { removeFromCompareQueue, addToCompareQueue } from "../../utils/compareStorage";
 import { INDUSTRIAL_CATALOG } from "../../utils/catalogData";
 import Loading from "./Loading";
 
@@ -33,7 +33,6 @@ function CompareQueue() {
       setOpen(false);
       setShowPicker(false);
       navigate(`/compare?ids=${selectedIds}`);
-      clearCompareQueue();
     }
   };
 
