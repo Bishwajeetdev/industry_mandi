@@ -16,6 +16,15 @@ function Home() {
   const [activeTab, setActiveTab] = useState("Trending");
   const [email, setEmail] = useState("");
   const [notice, setNotice] = useState("");
+  const categoryRailRef = useRef(null);
+  const productRailRef = useRef(null);
+
+  const scrollRail = (ref, direction) => {
+    if (ref.current) {
+      const scrollAmount = direction === "left" ? -340 : 340;
+      ref.current.scrollBy({ left: scrollAmount, behavior: "smooth" });
+    }
+  };
 
   const getStoredWishlistIds = () => {
     try {
@@ -217,6 +226,13 @@ function Home() {
             <i className="bi bi-star-fill" /> <span>{product.rating || "4.8"}</span>
             <span className="text-secondary">(ISO 9001)</span>
           </div>
+          {product.specifications && Object.keys(product.specifications).length > 0 && (
+            <div className="product-spec-chips">
+              {Object.entries(product.specifications).slice(0, 2).map(([k, v]) => (
+                <span className="spec-chip" key={k}>{k}: {String(v)}</span>
+              ))}
+            </div>
+          )}
           <div className="price-row">
             <strong>{formatPrice(product.price)}</strong>
             {product.oldPrice && <del>{formatPrice(product.oldPrice)}</del>}
@@ -351,9 +367,31 @@ function Home() {
             <h2>Start with a Category</h2>
             <p>High-density engineering components and capital machinery directly from vetted plants.</p>
           </div>
-          <Link to="/products" className="view-link">View full catalog <i className="bi bi-arrow-right" /></Link>
+          <div className="d-flex align-items-center gap-3">
+            <div className="rail-controls d-none d-md-flex gap-1">
+              <button
+                type="button"
+                className="rail-nav-btn"
+                onClick={() => scrollRail(categoryRailRef, "left")}
+                aria-label="Scroll categories left"
+                title="Scroll left"
+              >
+                <i className="bi bi-chevron-left" />
+              </button>
+              <button
+                type="button"
+                className="rail-nav-btn"
+                onClick={() => scrollRail(categoryRailRef, "right")}
+                aria-label="Scroll categories right"
+                title="Scroll right"
+              >
+                <i className="bi bi-chevron-right" />
+              </button>
+            </div>
+            <Link to="/products" className="view-link">View full catalog <i className="bi bi-arrow-right" /></Link>
+          </div>
         </div>
-        <div className="category-rail">
+        <div className="category-rail" ref={categoryRailRef}>
           {categories.map(([icon, name]) => (
             <Link to={`/products?category=${encodeURIComponent(name)}`} className="category-tile" key={name} aria-label={`Browse ${name} products`}>
               <div className="category-icon">
@@ -374,7 +412,27 @@ function Home() {
               <h2>Featured Industrial Machinery</h2>
               <p>Active RFQ shortlists, moving manufacturer price tiers, and high-demand plant equipment.</p>
             </div>
-            <div className="d-flex gap-2">
+            <div className="d-flex align-items-center gap-2">
+              <div className="rail-controls d-none d-md-flex gap-1">
+                <button
+                  type="button"
+                  className="rail-nav-btn"
+                  onClick={() => scrollRail(productRailRef, "left")}
+                  aria-label="Scroll products left"
+                  title="Scroll left"
+                >
+                  <i className="bi bi-chevron-left" />
+                </button>
+                <button
+                  type="button"
+                  className="rail-nav-btn"
+                  onClick={() => scrollRail(productRailRef, "right")}
+                  aria-label="Scroll products right"
+                  title="Scroll right"
+                >
+                  <i className="bi bi-chevron-right" />
+                </button>
+              </div>
               <Link to="/products" className="btn btn-outline-primary btn-sm">Explore all 4,892 SKUs</Link>
             </div>
           </div>
@@ -385,7 +443,7 @@ function Home() {
               </button>
             ))}
           </div>
-          <div className="product-rail">
+          <div className="product-rail" ref={productRailRef}>
             {displayProducts.map((product, index) => (
               <MarketplaceCard key={product._id} product={product} index={index} />
             ))}

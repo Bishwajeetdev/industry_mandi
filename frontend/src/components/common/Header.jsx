@@ -20,7 +20,20 @@ function Header() {
     [signInError, setSignInError] = useState(""),
     [showPassword, setShowPassword] = useState(false),
     [confirmLogout, setConfirmLogout] = useState(false),
+    searchInputRef = useRef(null),
     dash = getDashboardPath(user?.role);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     const loadCartCount = () => {
@@ -147,8 +160,25 @@ function Header() {
           </button>
           <form className="market-search" onSubmit={(event) => { event.preventDefault(); navigate(searchQuery.trim() ? `/products?q=${encodeURIComponent(searchQuery.trim())}` : "/products"); }}>
             <i className="bi bi-search" />
-            <input aria-label="Search machinery" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search 12,000+ machines, models, OEMs..." />
-            <kbd className="search-shortcut-badge">⌘K</kbd>
+            <input
+              ref={searchInputRef}
+              aria-label="Search machinery"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search 12,000+ machines, models, OEMs..."
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className="search-clear-btn"
+                onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }}
+                aria-label="Clear search"
+                title="Clear search"
+              >
+                <i className="bi bi-x-lg" />
+              </button>
+            )}
+            <kbd className="search-shortcut-badge" onClick={() => searchInputRef.current?.focus()} title="Press Ctrl+K or Cmd+K to search">⌘K</kbd>
             <button type="submit">Search</button>
           </form>
           <div className="navbar-nav ms-auto align-items-center gap-1 flex-nowrap mobile-nav-menu">

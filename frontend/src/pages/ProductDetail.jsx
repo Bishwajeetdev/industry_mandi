@@ -19,6 +19,15 @@ function Product() {
   const [wishMessage, setWishMessage] = useState("");
   const [cartAdded, setCartAdded] = useState(false);
   const [isWishlisted, setIsWishlisted] = useState(false);
+  const [showStickyBar, setShowStickyBar] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowStickyBar(window.scrollY > 480);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const product = state.data?.product;
   const productId = product?._id;
@@ -510,6 +519,57 @@ function Product() {
             </>
           )}
         </section>
+      )}
+
+      {/* Sticky Bottom Procurement Action Bar */}
+      {showStickyBar && (
+        <aside className="sticky-procurement-bar" aria-label="Quick procurement actions">
+          <div className="container d-flex align-items-center justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-3 min-w-0">
+              <img
+                src={heroImage}
+                alt={product.name}
+                className="sticky-bar-thumb"
+              />
+              <div className="min-w-0">
+                <span className="sticky-bar-brand font-monospace text-uppercase text-secondary">
+                  {product.brand || "OEM Manufacturer"} · {product.sku || "SPEC-STD"}
+                </span>
+                <div className="sticky-bar-title text-truncate fw-bold">
+                  {product.name}
+                </div>
+              </div>
+            </div>
+
+            <div className="d-flex align-items-center gap-3 flex-shrink-0">
+              <div className="d-none d-md-flex flex-column text-end">
+                <span className="sticky-bar-price font-monospace fw-bold">
+                  {fmt(displayPrice)}
+                </span>
+                <span className="sticky-bar-gst text-secondary small">
+                  Excl. 18% GST · In Stock
+                </span>
+              </div>
+              <button
+                type="button"
+                className={`btn btn-sm ${isCompared ? "btn-info text-white" : "btn-outline-primary"}`}
+                onClick={handleCompareToggle}
+                title="Toggle Compare"
+              >
+                <i className={`bi ${isCompared ? "bi-check2-circle" : "bi-arrow-left-right"} me-1`} />
+                <span>{isCompared ? "In Compare" : "Compare"}</span>
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${cartAdded ? "btn-success" : "btn-primary"} px-3`}
+                onClick={addToCart}
+              >
+                <i className={`bi ${cartAdded ? "bi-check2-circle" : "bi-cart-plus"} me-1`} />
+                <span>{cartAdded ? "Added" : "Add to Cart"}</span>
+              </button>
+            </div>
+          </div>
+        </aside>
       )}
     </main>
   );
